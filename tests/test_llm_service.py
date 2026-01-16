@@ -8,10 +8,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+from app.graph.core.state import State
 from app.services.llm_service import llm_service, LlmRequest
 from langchain_core.messages import HumanMessage, SystemMessage,AIMessage
 from loguru import logger
-
+from app.conf.prompt_init import prompt_template_service
 
 def test_simple_chat():
     """测试简单聊天."""
@@ -37,24 +38,30 @@ def test_simple_chat():
         return False
 
 
-def test_simple_json_output():
+def test_simple_json_output(user_query="今天天气怎么样"):
     """测试 JSON 输出."""
     print("=" * 80)
     print("测试 2: JSON 输出")
     print("=" * 80)
 
-    request = LlmRequest(
-        messages=[
-            SystemMessage(content="你是一个情感分析专家，请严格按照 JSON 格式返回结果。"),
-            HumanMessage(content='请分析以下情感并返回 JSON: {"sentiment": "情感类别", "confidence": 0.0}\n\n内容: 今天天气真好！')
-        ]
+    # 1. 渲染提示词模板
+    block_system_prompt = prompt_template_service.render("block_system.j2")
+
+    block_user_prompt = prompt_template_service.render(
+        "block_user.j2",
+        # messages=state.get("Messages", []),
+        question=user_query,
     )
 
+    # 2. 构建消息
+    messages = [
+        SystemMessage(content=block_system_prompt),
+        HumanMessage(content=block_user_prompt),
+    ]
     try:
-        result, usage = llm_service.simple_json_output(request)
+        result, usage = llm_service.simple_json_output(request=LlmRequest(messages=messages))
         print(f"\nJSON 结果:")
-        print(f"  情感: {result.get('sentiment', 'N/A')}")
-        print(f"  置信度: {result.get('confidence', 'N/A')}")
+        print(result)
         print("✓ JSON 输出测试通过\n")
         return True
     except Exception as e:
@@ -135,9 +142,9 @@ if __name__ == "__main__":
     results = []
 
     # 运行所有测试
-    results.append(("简单聊天", test_simple_chat()))
+    # results.append(("简单聊天", test_simple_chat()))
 
-    # results.append(("JSON 输出", test_simple_json_output()))
+    results.append(("JSON 输出", test_simple_json_output()))
     # results.append(("多轮对话", test_multi_turn_conversation()))
 
     # # BLOCK 分类测试

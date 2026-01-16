@@ -114,15 +114,8 @@ class LlmService:
 
     def simple_chat(self, request: LlmRequest) -> Tuple[str, Optional[Dict[str, Any]]]:
         """简单聊天."""
-        model = request.model_name or self.model
-        temperature = request.temperature or self.temperature
-
-        llm = ChatOpenAI(
-            model=model,
-            temperature=temperature,
-            api_key=SecretStr(self.api_key),
-            base_url=self.base_url,
-        )
+        # 复用已初始化的 LLM
+        llm = self.llm
 
         response = llm.invoke(request.messages)
         # 处理 content 可能是字符串或列表的情况
@@ -137,15 +130,8 @@ class LlmService:
 
     def simple_json_output(self, request: LlmRequest) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         """JSON 输出."""
-        model = request.model_name or self.model
-        temperature = 0.0  # JSON 输出使用低温度
-
-        llm = ChatOpenAI(
-            model=model,
-            temperature=temperature,
-            api_key=SecretStr(self.api_key),
-            base_url=self.base_url,
-        )
+        # 复用已初始化的 LLM（temperature=0）
+        llm = self.llm
 
         try:
             parser = JsonOutputParser()
