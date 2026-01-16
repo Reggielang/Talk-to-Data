@@ -2,9 +2,7 @@ import pymysql
 from typing import List, Dict, Any, Optional
 from contextlib import contextmanager
 from loguru import logger
-from config import get_settings
-
-settings = get_settings()
+from conf.config import settings
 
 
 class MySQLClient:

@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     # LLM Configuration
     openai_api_key: str = ""
     zhipuai_api_key: str = ""
-    default_llm: str = "openai"
+    base_url: str = ""
+    default_llm: str = ""
 
     # MySQL Configuration
     mysql_host: str = "localhost"
@@ -49,3 +50,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+settings = get_settings()
