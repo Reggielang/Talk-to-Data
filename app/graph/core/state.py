@@ -17,4 +17,5 @@ class State(TypedDict):
     ForceEnd: bool
     IsBlocked: bool
     BlockReason: str
+    UnderstandResult: dict[str, str]
     Response: str
