@@ -1,147 +1,136 @@
 """测试 State Graph 接口."""
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 import uuid
 import datetime
 from loguru import logger
-from typing import Optional
 
-from app.graph.graph import create_state_graph,app
+from app.graph.graph import create_state_graph, app
 from app.graph.core.state import State
-from app.graph.core.model import MessageItem, LlmCallItem
 
 router = APIRouter(prefix="/test", tags=["test"])
 
 
-@router.post("/state")
-async def test_state_graph(
+# ============== 请求/响应模型 ==============
+class StateGraphRequest(BaseModel):
+    """State Graph 测试请求"""
+    user_query: str = Field(..., min_length=1, description="用户查询语句")
+    session_id: Optional[str] = Field(None, description="会话ID，可选")
+    llm_model: str = Field("glm-4.7", description="LLM 模型名称")
+    llm_temperature: float = Field(0.0, description="LLM 温度设置")
+
+
+class StateGraphResponse(BaseModel):
+    """State Graph 测试响应"""
+    session_id: str
+    user_query: str
+    is_blocked: bool
+    block_reason: str
+    understand_result: Dict[str, Any]
+    response: str
+    llm_calls: int
+    success: bool
+    execution_time: Optional[float] = None
+
+
+
+
+class QueryResult(BaseModel):
+    """单个查询结果"""
+    query: str
+    is_blocked: bool
+    block_reason: str
+    understand_result: Dict[str, Any]
+    response: str
+    success: bool
+    error: Optional[str] = None
+
+
+# ============== 辅助函数 ==============
+def create_initial_state(
     user_query: str,
-    session_id: Optional[str] = None,
+    session_id: str,
     llm_model: str = "glm-4.7",
-):
+    llm_temperature: float = 0.0
+) -> State:
+    """创建初始状态"""
+    return {
+        "SessionId": session_id,
+        "SessionMessgeId": str(uuid.uuid4()),
+        "UserQuery": user_query,
+        "LlmModelName": llm_model,
+        "LlmTemperature": llm_temperature,
+        "Messages": [],
+        "SupervisorMessages": [],
+        "CurrentDatetime": datetime.datetime.now(),
+        "LlmCalls": [],
+        "ForceEnd": False,
+        "IsBlocked": False,
+        "BlockReason": "",
+        "UnderstandResult": {},
+        "Response": "",
+    }
+
+
+# ============== 路由接口 ==============
+@router.post("/state", response_model=StateGraphResponse)
+async def test_state_graph(request: StateGraphRequest):
     """测试 State Graph 接口.
 
     Args:
-        user_query: 用户问题
-        session_id: 会话 ID，可选
-        llm_model: LLM 模型名称
+        request: 包含所有参数的请求体
 
     Returns:
         执行结果
     """
+    start_time = datetime.datetime.now()
+    
     try:
         # 生成 session_id
-        session_id = session_id or str(uuid.uuid4())
+        session_id = request.session_id or str(uuid.uuid4())
 
-        logger.info(f"[Test State] Session: {session_id}, Query: {user_query}")
+        logger.info(f"[Test State] Session: {session_id}, Query: {request.user_query}")
 
         # 初始化 State
-        initial_state: State = {
-            "SessionId": session_id,
-            "SessionMessgeId": str(uuid.uuid4()),
-            "UserQuery": user_query,
-            "LlmModelName": llm_model,
-            "LlmTemperature": 0.0,
-            "Messages": [],
-            "SupervisorMessages": [],
-            "CurrentDatetime": datetime.datetime.now(),
-            "LlmCalls": [],
-            "ForceEnd": False,
-            "IsBlocked": False,
-            "BlockReason": "",
-            "UnderstandResult": {},
-            "Response": "",
-        }
+        initial_state = create_initial_state(
+            user_query=request.user_query,
+            session_id=session_id,
+            llm_model=request.llm_model,
+            llm_temperature=request.llm_temperature
+        )
 
         # 执行
         logger.info(f"[Test State] Invoking graph...")
         result = app.invoke(initial_state)
+        
+        # 计算执行时间
+        execution_time = (datetime.datetime.now() - start_time).total_seconds()
 
         # 返回结果
-        return {
-            "session_id": session_id,
-            "user_query": user_query,
-            "is_blocked": result["IsBlocked"],
-            "block_reason": result["BlockReason"],
-            "understand_result": result.get("UnderstandResult", {}),
-            "response": result["Response"],
-            "llm_calls": len(result.get("LlmCalls", [])),
-            "success": True,
-        }
+        return StateGraphResponse(
+            session_id=session_id,
+            user_query=request.user_query,
+            is_blocked=result["IsBlocked"],
+            block_reason=result["BlockReason"],
+            understand_result=result.get("UnderstandResult", {}),
+            response=result["Response"],
+            llm_calls=len(result.get("LlmCalls", [])),
+            success=True,
+            execution_time=execution_time
+        )
 
     except Exception as e:
         logger.error(f"[Test State] Error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/state/batch")
-async def test_state_batch(
-    queries: list[str],
-    session_id: Optional[str] = None,
-    llm_model: str = "glm-4.7",
-):
-    """批量测试 State Graph.
-
-    Args:
-        queries: 问题列表
-        session_id: 会话 ID，可选
-        llm_model: LLM 模型名称
-
-    Returns:
-        批量执行结果
-    """
-    try:
-        session_id = session_id or str(uuid.uuid4())
-        results = []
-
-        for query in queries:
-            logger.info(f"[Test Batch] Query: {query}")
-
-            initial_state: State = {
-                "SessionId": session_id,
-                "SessionMessgeId": str(uuid.uuid4()),
-                "UserQuery": query,
-                "LlmModelName": llm_model,
-                "LlmTemperature": 0.0,
-                "Messages": [],
-                "SupervisorMessages": [],
-                "CurrentDatetime": datetime.datetime.now(),
-                "LlmCalls": [],
-                "ForceEnd": False,
-                "IsBlocked": False,
-                "BlockReason": "",
-                "UnderstandResult": {},
-                "Response": "",
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(e),
+                "type": type(e).__name__
             }
-
-            try:
-                result = app.invoke(initial_state)
-                results.append({
-                    "query": query,
-                    "is_blocked": result["IsBlocked"],
-                    "block_reason": result["BlockReason"],
-                    "understand_result": result.get("UnderstandResult", {}),
-                    "response": result["Response"],
-                    "success": True,
-                })
-            except Exception as e:
-                logger.error(f"[Test Batch] Query failed: {query}, Error: {e}")
-                results.append({
-                    "query": query,
-                    "error": str(e),
-                    "success": False,
-                })
-
-        return {
-            "session_id": session_id,
-            "total": len(queries),
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"[Test Batch] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        )
 
 
 @router.get("/graph/mermaid")
@@ -153,8 +142,8 @@ async def get_graph_mermaid():
     """
     try:
         graph = create_state_graph()
-        app = graph.compile()
-        mermaid = app.get_graph().draw_mermaid()
+        app_compiled = graph.compile()
+        mermaid = app_compiled.get_graph().draw_mermaid()
 
         return {
             "mermaid": mermaid,
@@ -162,4 +151,46 @@ async def get_graph_mermaid():
         }
     except Exception as e:
         logger.error(f"[Get Mermaid] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(e),
+                "type": type(e).__name__
+            }
+        )
+
+
+# 新增接口：测试连接
+@router.get("/ping")
+async def ping():
+    """测试连接"""
+    return {
+        "status": "ok",
+        "message": "pong",
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+
+
+# 新增接口：获取图信息
+@router.get("/graph/info")
+async def get_graph_info():
+    """获取 Graph 信息"""
+    try:
+        graph = create_state_graph()
+        app_compiled = graph.compile()
+        
+        return {
+            "success": True,
+            "nodes": list(app_compiled.get_graph().nodes.keys()) if hasattr(app_compiled.get_graph(), 'nodes') else [],
+            "edges": list(app_compiled.get_graph().edges) if hasattr(app_compiled.get_graph(), 'edges') else [],
+            "has_mermaid": hasattr(app_compiled.get_graph(), 'draw_mermaid')
+        }
+    except Exception as e:
+        logger.error(f"[Get Graph Info] Error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(e),
+                "type": type(e).__name__
+            }
+        )

@@ -41,8 +41,13 @@ def block_node(state: State) -> State:
             temperature=0.0,
         )
 
+        #打印prompt
+        logger.info(f"BLOCK System Prompt: {block_system_prompt}")
+        logger.info(f"BLOCK User Prompt: {block_user_prompt}")
+
         result, _ = llm_service.simple_json_output(request)
 
+        logger.info(f"LLM message: {result}")
         # 4. 解析结果
         category = result.get("category", "relevant")
         message = result.get("message", "")
@@ -52,6 +57,8 @@ def block_node(state: State) -> State:
         logger.info(
             f"LLM classification: category={category}, measures={measures}, metrics={metrics}"
         )
+        
+
 
         # 5. 根据分类决定是否拦截
         if category in ["irrelevant", "unclear", "salary"]:

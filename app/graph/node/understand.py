@@ -32,6 +32,9 @@ def understand_node(state: State) -> State:
             SystemMessage(content=understand_system_prompt),
             HumanMessage(content=understand_user_prompt),
         ]
+                #打印prompt
+        logger.info(f"Understand System Prompt: {understand_system_prompt}")
+        logger.info(f"Understand User Prompt: {understand_user_prompt}")
 
         # 3. 调用 LLM JSON 输出
         request = LlmRequest(
@@ -42,6 +45,7 @@ def understand_node(state: State) -> State:
 
         result, _ = llm_service.simple_json_output(request)
 
+        logger.info(f"LLM message: {result}")
         # 4.更新State
         state["UnderstandResult"] = result
 
