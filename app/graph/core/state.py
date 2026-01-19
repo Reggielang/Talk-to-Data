@@ -19,3 +19,10 @@ class State(TypedDict):
     BlockReason: str
     UnderstandResult: dict[str, str]
     Response: str
+    # DataQuery 节点相关字段
+    UserRole: str
+    DataQueryTask: str
+    DataQueryTable: str
+    DataQueryModule: str
+    SqlGenResult: dict
+    DataQueryResult: dict

@@ -2,113 +2,137 @@
 
 ## 系统信息
 ### 时间信息
-1. 当前年月(yyyymm): {{ date("Ym") }}
+1. 当前年月(yyyy-mm): {{ date("Y-m") }}
 2. 本年: {{ date("Y") }}年
 3. 本季度: {{ date("Y") }}年第{{ date("q") }}季度（Q{{ date("q") }}）。月份范围: {{ date("Y") }}年{{ date("m", "QuarterBegin") }}月到{{ date("Y") }}年{{ date("m", "QuarterEnd") }}月
-  3.1. 上一季度: {{ date("Y", "Quarter-1", "QuarterBegin") }}年第{{ date("q", "Quarter-1", "QuarterBegin") }}季度（Q{{ date("q", "Quarter-1", "QuarterBegin") }}）。范围: {{ date("Ym", "Quarter-1", "QuarterBegin") }} - {{ date("Ym", "Quarter-1", "QuarterEnd") }}
+  3.1. 上一季度: {{ date("Y", "Quarter-1", "QuarterBegin") }}年第{{ date("q", "Quarter-1", "QuarterBegin") }}季度（Q{{ date("q", "Quarter-1", "QuarterBegin") }}）。范围: {{ date("Y-m", "Quarter-1", "QuarterBegin") }} - {{ date("Y-m", "Quarter-1", "QuarterEnd") }}
 4. 本月: {{ date("Y") }}年{{ date("m") }}月
-  4.1. 上个月: {{ date("Ym", "Month-1") }}
-5. 上半年（H1）: {{ date("Y") }}01 - {{ date("Y") }}06
-6. 下半年（H2）: {{ date("Y") }}07 - {{ date("Y") }}12
-7. 本周: {{ date("Ymd", "WeekBegin") }} - {{ date("Ymd", "WeekEnd") }}
-8. 上周: {{ date("Ymd", "Week-1", "WeekBegin") }} - {{ date("Ymd", "Week-1", "WeekEnd") }}
-9. 最近7天: {{ date("Ymd", "Day-6") }} - {{ date("Ymd") }}
-10. 今天: {{ date("Ymd") }}
+  4.1. 上个月: {{ date("Y-m", "Month-1") }}
+5. 上半年（H1）: {{ date("Y") }}-01 - {{ date("Y") }}-06
+6. 下半年（H2）: {{ date("Y") }}-07 - {{ date("Y") }}-12
+7. 本周: {{ date("Y-m-d", "WeekBegin") }} - {{ date("Y-m-d", "WeekEnd") }}
+8. 上周: {{ date("Y-m-d", "Week-1", "WeekBegin") }} - {{ date("Y-m-d", "Week-1", "WeekEnd") }}
+9. 最近30天: {{ date("Y-m-d", "Day-29") }} - {{ date("Y-m-d") }}
+10. 最近7天: {{ date("Y-m-d", "Day-6") }} - {{ date("Y-m-d") }}
+11. 今天: {{ date("Y-m-d") }}
 
 ### 权限信息
 
 
 ## 输出格式
 1. 第一部分，精炼地思考和分析，与任务相关的信息。使用<think>...</think>标签输出。
-  - 数据口径：是否提及团队；是否提及特定的角色或人
   - SQL查询语句编写规范：限制条件（WHERE语句的构成）；筛选字段（SELECT语句的构成）
 2. 第二部分，使用```sql```代码块输出SQL查询语句，只能输出唯一**一条**SQL查询语句
 
 ## SQL查询语句编写规范
 1. WHERE条件规范
-
+  
 2. SELECT语句规范
-  2.1. 必须加入充足的字段，从而支撑任务结果。例如在"我的团队中哪个MR的销量最高？"的任务中，额外加入查询时间、mr_empolyee_pos、销量金额等字段。
-  2.2. 必须将占比、增长率等字段转换为百分比格式。格式为：`CONCAT(ROUND(value * 100, 2), '%')`
-  2.3. 使用`LIKE`模糊查询时，确保SELECT语句中包含所使用的字段。例如: `hco_nm LIKE '%value%'` 则SELECT必须包含 `hco_nm` 字段。
+  2.1. 使用`LIKE`模糊查询时，确保SELECT语句中包含所使用的字段。例如: `content_name LIKE '%value%'` 则SELECT必须包含 `content_name` 字段。
 3. ORDER BY规范:
   3.1. 必须包含`ORDER BY`语句，确保查询结果有序。
   3.2. 不能使用百分比字符串进行排序。
 4. SQL语句开头必须包含注释，充分解释SQL查询结果。格式为：```sql\n--Description: \n```。
-  4.1. 查询结果（时间、所属组织架构、所属品牌名、销量明细），例如：`查询在我的团队哪个MR的销量最高`。
-  4.2. 每一个SELECT字段的含义。
+  4.1. 每一个SELECT字段的含义。
 5. GROUP BY规范：
     5.1. 必须包含`GROUP BY`语句，确保聚合查询正确。
     5.2. GROUP BY中必须包含所有非聚合函数的SELECT字段。
 6. JOIN规范: 减少使用`JOIN`，除非任务需要跨表查询。
 
 ## 数据口径
-1. sales_date: 如果没有提及时间，使用最新数据上报时间（sales_date = '{{ date("Ym") }}'）。
-2. 增长和增速: 未明确时间范围，默认使用同比
+1. stat_date: 如果没有提及时间，使用最新数据上报时间（stat_date = '{{ date("Y-m-d") }}'）。
+
 
 ## 名词解释
-- ALL: China用户对应的最高角色
-- GBU: 全球业务部门
-- BU: 业务部门
-- SUB_BU: 子业务单元
-- AD: 大区总监
-- RM: 大区经理
-- DM: 地区经理
+
 
 ## 数据库表信息
 ### 注意事项
 1. 每一条数据均为数据上报时获取到的数据
 2. 不支持 `FIELD()` 函数
 3. 查询最多或最少数据时，必须考虑数值相同的情况，必须使用`RANK`函数筛选出所有最多/最少的数据
-4. 数据权限限制当前用户只能查询其本人及其下属成员的数据，不能查看与当前用户同级或上级的数据
 ---
 
 
----
-
-### 表名: ads_ci.svw_ttd_monthly
-描述: 存储了Sales模块的月度明细数据，包括时间范围、组织架构划分、品牌架构划分、大区区域、hco终端销售明细、销量金额明细、预算金额明细、销量盒数等。可解答"销量金额、医院销量、达成率、增长率、预算达成、盒数"等相关问题。
+### 表名: app.scene_analysis
+描述: 记录了不同内容场景的互动表现数据，包括曝光、点击、播放、有效播放等关键指标。时间范围为日度，可用于分析"各场景的点击率、播放率是否达标"、"用户观影时长变化趋势"等业务问题。表中的每行数据为日度汇总，如需计算周度/月度指标，需将分子和分母分别SUM后计算比率指标。
 字段信息:
-user_group; varchar; 用户组标识符。必填，用于区分不同用户组的数据
-role_type; varchar; 用户组角色，可选，用户标识不同用户组的角色。
-sales_date; varchar; 数据上报时间，格式为yyyymm。示例值: "202509"
-year; int; 数据所属的年份，格式为yyyy。示例值：2025
-quarter; varchar; 数据所属的季度，可选值：['Q1','Q2','Q3','Q4']
-month; int; 数据所属的月份。示例值：8
+stat_date; date; 数据统计日期，格式为yyyy-MM-dd。示例值: "2025-09-01"
+scene_name; varchar(200); 内容场景名称，如首页推荐、热门频道等。不为空
+click_rate; decimal(5,2); 次数点击率
+user_click_rate; decimal(5,2); 用户点击率
+play_rate; decimal(5,2); 次数有效播率
+user_play_rate; decimal(5,2); 用户有效播率
+bounce_rate; decimal(5,2); 次数跳出率，表示点击后未产生有效播放的比例
+user_bounce_rate; decimal(5,2); 用户跳出率，表示点击用户中未产生有效播放的比例
+avg_watch_time_per_play; decimal(8,2); 次均观影时长（分钟）
+avg_watch_time_per_user; decimal(8,2); 人均观影时长（分钟）
+avg_plays_per_user; decimal(8,2); 人均观影次数
+avg_valid_watch_time_per_play; decimal(8,2); 次均有效观影时长（分钟），
+avg_valid_watch_time_per_user; decimal(8,2); 人均有效观影时长（分钟）
+avg_valid_plays_per_user; decimal(8,2); 人均有效观影次数
+exposure_count; bigint; 曝光次数，不为空
+exposure_user_count; bigint; 曝光用户数，不为空
+click_count; bigint; 点击次数，不为空
+click_user_count; bigint; 点击用户数，不为空
+play_count; bigint; 播放次数，不为空
+total_play_duration_hours; decimal(12,2); 播放总时长（小时），不为空
+play_user_count; bigint; 播放用户数，不为空
+valid_play_count; bigint; 有效播放次数，不为空
+total_valid_play_duration_hours; decimal(12,2); 有效播放总时长（小时），不为空
+valid_play_user_count; bigint; 有效播放用户数，不为空
 
+
+###表名: app.content_analysis
+描述: 记录了具体内容（视频/图文等）的详细互动表现与商业转化数据，包括曝光、点击、播放、有效播放及付费订单等关键指标。时间范围为日度，可用于分析"内容点击率、收看率、付费转化率"、"不同内容类型的表现差异"等业务问题。表中的每行数据为日度汇总，如需计算周度/月度指标，需将分子和分母分别SUM后计算比率指标。
+字段信息:
+stat_date; date; 数据统计日期，格式为yyyy-MM-dd。示例值: "2025-09-01"
+content_id; varchar(100); 内容的唯一标识ID。不为空
+content_name; varchar(500); 内容名称。不为空
+content_type; varchar(50); 内容类型，如短视频、长视频、图文、直播等。不为空
+impression_count; bigint; 曝光次数。不为空
+impression_users; bigint; 曝光人数。不为空
+click_count; bigint; 点击次数。不为空
+click_users; bigint; 点击人数。不为空
+click_rate; decimal(6,2); 内容点击率
+play_count; bigint; 点播次数。不为空
+play_users; bigint; 点播人数。不为空
+avg_play_duration_minutes; decimal(8,2); 平均播放时长（分钟）
+effective_play_count; bigint; 有效播放次数。不为空
+effective_play_users; bigint; 有效播放人数。不为空
+bounce_play_count; bigint; 跳出播放次数。不为空
+bounce_play_users; bigint; 跳出播放人数。不为空
+view_rate; decimal(6,2); 内容收看率
+payment_orders; int; 由该内容引导产生的支付订单数量。不为空
+payment_amount; decimal(12,2); 由该内容引导产生的支付订单总金额（单位：元）。不为空
 ---
 
 ## 示例
-
 ### 示例 1
-任务：达必妥目前的业务进度赶上四季度的时间进度了吗？
+任务：近30天幽灵党影片的点击次数是多少？
 你的输出:
 <think>
 分析数据口径:
-1. 提到"达必妥": 限制品牌系列`brand_family_en = 'Dupixent'`。
-2. 提到"业务进度": 默认为销售达成率`achievement_rate`。
-3. 提到"四季度时间进度": 默认QTD的时间进度(工作进度)为 季度进度 (QTD): {{ state.oneci.salesprogress.qtdprogress }}。
-4. 提到"四季度": 默认为当年的`year = {{ date("Y") }} AND quarter = 'Q4'`。
+1. 提到"幽灵党": 限制内容名称`content_name LIKE '%幽灵党%'`。
+2. 提到"点击次数": 默认为`content_analysis`表的点击次数字段`click_count`。
+3. 提到"近30天": 默认为当年近30天`stat_date >= '{{ date("Y-m-d", "Day-29") }}' AND stat_date < '{{ date("Y-m-d") }}'`。
 分析限制条件:
-1. 用户组过滤：`user_group = '{{ state.oneci.usergroup }}'`
-2. 加入数据口径1：`year = {{ date("Y") }} AND quarter = 'Q4'`
-3. 限制品牌系列范围：`brand_family_en = 'Dupixent'`
-4. 关键数值不为空：`actual_value IS NOT NULL AND target_value IS NOT NULL`
+1. 限制内容范围：`content_name LIKE '%幽灵党%'`
+2. 加入数据口径1：`stat_date >= '{{ date("Y-m-d", "Day-29") }}' AND stat_date < '{{ date("Y-m-d") }}'`
 分析筛选字段:
-1. 达成率：`achievement_rate`
-2. 达成率/工作进度的比值： `{{ state.oneci.salesprogress.qtdprogress }} / achievement_rate`
+1. 内容名称: `content_name`
+2. SUM(click_count): 总点击次数
 </think>
 ```sql
---Description: 查询达必妥的本年四季度业务进度和时间进度的对比情况。查询结果包含达成率和达成率 VS 工作进度的对比情况。 --achievement_rate: 达成率; --achievement_rate_vs_progress:对比情况;
+--Description: 查询近30天幽灵党影片的点击次数是多少？ --content_name: 内容名称; --click_count:点击次数;
 SELECT
-    CONCAT(ROUND((SUM(actual_value) / SUM(target_value)) * 100, 2), '%') AS achievement_rate,
-    ROUND((SUM(actual_value) / SUM(target_value)) * 100, 2) / {{ state.oneci.salesprogress.qtdprogress }} AS achievement_rate_vs_progress
+    content_name,
+    SUM(click_count) AS total_clicks_last_30_days
 FROM
-    ads_ci.svw_ttd_monthly
-WHERE user_group = '{{ state.oneci.usergroup }}'
-  AND year = {{ date("Y") }} AND quarter = 'Q4'
-  AND actual_value IS NOT NULL AND target_value IS NOT NULL
-  AND brand_family_en = 'Dupixent'
+    app.content_analysis
+WHERE
+    content_name LIKE '%幽灵党%'
+  AND stat_date >= '{{ date("Y-m-d", "Day-29") }}'
+  AND stat_date < '{{ date("Y-m-d") }}'
+GROUP BY content_name
 ```
-
----

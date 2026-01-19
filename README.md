@@ -46,6 +46,13 @@ python scripts/init_meta_db.py
 python scripts/sync_schema.py
 ```
 
+#### 3.1 启动项目依赖的相关资源docker命令
+- MySQL:
+docker run -d --name mysql-8.4 -e MYSQL_ROOT_PASSWORD=123456 -e MYSQL_DATABASE=app -e MYSQL_USER=kodi -e MYSQL_PASSWORD=123456 -p 3307:3306 -v mysql-8.4-data:/var/lib/mysql --restart unless-stopped mysql:8.4.7
+
+- PG:
+docker run -d --name postgres-16 -e POSTGRES_PASSWORD=123456 -e POSTGRES_DB=mydb -e POSTGRES_USER=kodi -e POSTGRES_PASSWORD=123456 -p 5432:5432 -v postgres-data:/var/lib/postgresql/data --restart unless-stopped postgres:16
+
 ### 4. 启动服务
 
 ```bash
@@ -68,3 +75,5 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - [ ] 查询结果可视化
 - [ ] 查询历史管理
 - [ ] Schema 语义搜索
+
+
