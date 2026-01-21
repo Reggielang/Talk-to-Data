@@ -1,8 +1,9 @@
 """LLM 服务"""
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+import time
+import uuid
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import (
@@ -11,39 +12,11 @@ from langchain_core.messages import (
     SystemMessage,
     AIMessage,
 )
-from langchain_core.output_parsers import JsonOutputParser
 from loguru import logger
 from app.conf.config import settings
+from app.graph.core.model import LlmCallItem, MessageItem
+from app.graph.core.state import State
 import json
-
-
-class MessageRole(str, Enum):
-    """消息角色."""
-    SYSTEM = "system"
-    USER = "user"
-    ASSISTANT = "assistant"
-
-
-@dataclass
-class MessageItem:
-    """消息项."""
-    Content: str
-    Role: str
-
-
-@dataclass
-class LlmCallItem:
-    """LLM 调用记录."""
-    Id: str
-    ModelName: str
-    Temperature: float
-    Messages: List[MessageItem]
-    StartAt: datetime
-    EndAt: datetime
-    DurationMs: int
-    PromptTokens: int = 0
-    CompletionTokens: int = 0
-    TotalTokens: int = 0
 
 
 @dataclass
@@ -55,36 +28,26 @@ class LlmRequest:
     max_tokens: Optional[int] = None
 
 
-class MessageContainer:
-    """消息容器."""
+def convert_to_message_items(messages: List[BaseMessage]) -> List[MessageItem]:
+    """将 LangChain 消息转换为 MessageItem."""
+    message_items = []
+    for msg in messages:
+        if isinstance(msg, SystemMessage):
+            role: str = "system"
+        elif isinstance(msg, HumanMessage):
+            role = "user"
+        elif isinstance(msg, AIMessage):
+            role = "assistant"
+        else:
+            role = "user"
 
-    def __init__(self):
-        self.system_message: Optional[SystemMessage] = None
-        self.messages: List[BaseMessage] = []
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
 
-    def set_system_prompt(self, prompt: str) -> None:
-        """设置系统提示."""
-        self.system_message = SystemMessage(content=prompt)
-
-    def append_message(self, message: BaseMessage) -> None:
-        """添加消息."""
-        self.messages.append(message)
-
-    def append_user_message(self, content: str) -> None:
-        """添加用户消息."""
-        self.messages.append(HumanMessage(content=content))
-
-    def append_assistant_message(self, content: str) -> None:
-        """添加助手消息."""
-        self.messages.append(AIMessage(content=content))
-
-    def get_messages(self) -> List[BaseMessage]:
-        """获取所有消息."""
-        all_messages = []
-        if self.system_message:
-            all_messages.append(self.system_message)
-        all_messages.extend(self.messages)
-        return all_messages
+        message_items.append(MessageItem(
+            Role=role,
+            Content=content,
+        ))
+    return message_items
 
 
 class LlmService:
@@ -98,10 +61,10 @@ class LlmService:
         base_url: Optional[str] = None,
     ):
         """初始化 LLM 服务."""
-        self.model = model or settings.default_llm
+        self.model = model or settings.qwen_model_name
         self.temperature = temperature
-        self.api_key = api_key or settings.zhipuai_api_key
-        self.base_url = base_url or settings.base_url
+        self.api_key = api_key or settings.qwen_api_key
+        self.base_url = base_url or settings.qwen_base_url
 
         self.llm = ChatOpenAI(
             model=self.model,
@@ -110,49 +73,137 @@ class LlmService:
             base_url=self.base_url,
         )
 
+        self._state: Optional[State] = None
+
         logger.info(f"LlmService initialized with model: {self.model}")
 
-    def simple_chat(self, request: LlmRequest) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """简单聊天."""
-        # 复用已初始化的 LLM
+    def set_state(self, state: State):
+        """设置当前处理的 state，用于自动记录 LLM 调用."""
+        self._state = state
+
+    def _create_and_record_llm_call(
+        self,
+        call_id: str,
+        start_at: datetime,
+        end_at: datetime,
+        message_items: List[MessageItem],
+        response_content: str,
+        model_name: str,
+        temperature: float,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+    ):
+        """创建并记录 LLM 调用."""
+        duration_ms = int((end_at - start_at).total_seconds() * 1000)
+
+        # 添加助手回复到消息列表
+        message_items.append(MessageItem(
+            Role="assistant",
+            Content=response_content,
+        ))
+
+        # 创建 LLM 调用记录
+        llm_call_item = LlmCallItem(
+            Id=call_id,
+            StartAt=start_at,
+            EndAt=end_at,
+            Messages=message_items,
+            ModelName=model_name,
+            Temperature=temperature,
+            PromptTokens=prompt_tokens,
+            TotalTokens=total_tokens,
+            ComletionTokens=completion_tokens,
+            DurationMs=duration_ms,
+        )
+
+        # 自动记录到 state
+        if self._state is not None:
+            self._state["LlmCalls"].append(llm_call_item)
+
+    def simple_chat(self, request: LlmRequest) -> str:
+        """简单聊天，自动记录到 state."""
+        start_at = datetime.now()
+        call_id = str(uuid.uuid4())
+
         llm = self.llm
+        model_name = request.model_name or self.model
+        temperature = request.temperature or self.temperature
 
-        response = llm.invoke(request.messages)
-        # 处理 content 可能是字符串或列表的情况
-        content = response.content
-        if isinstance(content, str):
-            content = content.strip()
-        else:
-            content = str(content)
-        usage = None
-
-        return content, usage
-
-    def simple_json_output(self, request: LlmRequest) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """JSON 输出."""
-        # 复用已初始化的 LLM（temperature=0）
-        llm = self.llm
+        # 转换消息
+        message_items = convert_to_message_items(request.messages)
 
         try:
-            parser = JsonOutputParser()
-            chain = llm | parser
-            result = chain.invoke(request.messages)
-            return result, None
+            response = llm.invoke(request.messages)
+            end_at = datetime.now()
+
+            # 处理 content
+            content = response.content
+            if isinstance(content, str):
+                content = content.strip()
+            else:
+                content = str(content)
+
+            # 获取 token 使用情况
+            prompt_tokens = 0
+            completion_tokens = 0
+            total_tokens = 0
+
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                prompt_tokens = response.usage_metadata.get('input_tokens', 0)
+                completion_tokens = response.usage_metadata.get('output_tokens', 0)
+                total_tokens = response.usage_metadata.get('total_tokens', 0)
+
+            # 创建并记录 LLM 调用
+            self._create_and_record_llm_call(
+                call_id=call_id,
+                start_at=start_at,
+                end_at=end_at,
+                message_items=message_items,
+                response_content=content,
+                model_name=model_name,
+                temperature=temperature,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
+
+            return content
+
         except Exception as e:
-            logger.error(f"simple_json_output error: {e}")
-            # 尝试手动解析
+            end_at = datetime.now()
+            logger.error(f"simple_chat error: {e}")
+
+            # 即使出错也记录
+            self._create_and_record_llm_call(
+                call_id=call_id,
+                start_at=start_at,
+                end_at=end_at,
+                message_items=message_items,
+                response_content=str(e),
+                model_name=model_name,
+                temperature=temperature,
+            )
+
+            raise
+
+    def simple_json_output(self, request: LlmRequest) -> Dict[str, Any]:
+        """JSON 输出，自动记录到 state."""
+        content = self.simple_chat(request)
+
+        try:
+            return json.loads(content)
+        except Exception as e:
+            logger.error(f"尝试手动提取 JSON 代码块: {e}")
+            # 尝试提取 JSON 代码块
             try:
-                content, _ = self.simple_chat(request)
-                if isinstance(content, str):
-                    if content.startswith("```json"):
-                        content = content[7:]
-                    elif content.startswith("```"):
-                        content = content[3:]
-                    if content.endswith("```"):
-                        content = content[:-3]
-                    result = json.loads(content.strip())
-                    return result, None
-                raise
+                if content.startswith("```json"):
+                    content = content[7:]
+                elif content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                return json.loads(content.strip())
             except Exception as e2:
                 logger.error(f"manual json parse failed: {e2}")
                 raise

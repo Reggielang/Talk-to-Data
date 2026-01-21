@@ -1,6 +1,7 @@
 """测试 LLM 服务."""
 import sys
 from pathlib import Path
+from app.conf.utils.prompt_parms import create_date_function
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -36,27 +37,27 @@ def test_simple_chat():
         return False
 
 
-def test_simple_json_output(user_query="今天天气怎么样"):
+def test_simple_json_output(user_query="请查询近30天幽灵党影片的点击次数是多少？"):
     """测试 JSON 输出."""
     print("=" * 80)
     print("测试 2: JSON 输出")
 
     # 1. 渲染提示词模板
-    block_system_prompt = prompt_template_service.render("block_system.j2")
-
+    date_func = create_date_function()
     block_user_prompt = prompt_template_service.render(
-        "block_user.j2",
+        "data_query_system.j2",
         # messages=state.get("Messages", []),
-        question=user_query,
+        date=date_func,
+        task=user_query,
     )
 
     # 2. 构建消息
     messages = [
-        SystemMessage(content=block_system_prompt),
-        HumanMessage(content=block_user_prompt),
+        SystemMessage(content=block_user_prompt),
+        HumanMessage(content=user_query),
     ]
     try:
-        result, usage = llm_service.simple_json_output(request=LlmRequest(messages=messages))
+        result, usage = llm_service.simple_chat(request=LlmRequest(messages=messages))
         print(f"\nJSON 结果:")
         print(result)
         print("✓ JSON 输出测试通过\n")

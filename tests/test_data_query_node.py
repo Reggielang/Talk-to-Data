@@ -1,129 +1,69 @@
-"""DataQuery 节点测试."""
-
-import sys
-import os
-
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import datetime
-from app.graph.node.data_query import data_query_node, data_query_node_simple
+import json
+from datetime import datetime
+from typing import Optional
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from loguru import logger
+from app.graph.core.state import State
 from app.conf.prompt_init import PromptConfig
 from app.conf.utils.prompt_parms import create_date_function
+from app.services.llm_service import llm_service, LlmRequest
+from app.db.mysql import mysql_client
+from decimal import Decimal
+def execute_sql_query(sql: str) -> tuple[str, str, int]:
+    """执行 SQL 查询.
 
+    Args:
+        sql: SQL 查询语句
 
-def test_prompt_rendering():
-    """测试模板渲染."""
-    print("=" * 60)
-    print("测试 data_query_system.j2 模板渲染")
-    print("=" * 60)
+    Returns:
+        (json_content, sample_json_content, data_length)
+    """
+    logger.info(f"Executing SQL: {sql}")
 
-    prompt_config = PromptConfig()
-    date_func = create_date_function()
+    try:
+        # 使用 mysql_client 执行查询
+        results = mysql_client.execute_query(sql)
+        data_length = len(results)
 
-    result = prompt_config.render(
-        "data_query_system.j2",
-        date=date_func,
-        task="请查询近30天幽灵党影片的点击次数是多少？"
-    )
+        if data_length == 0:
+            return "[]", "[]", 0
+        
+        def decimal_default(obj):
+            if isinstance(obj, Decimal):
+                return float(obj)  # 转换为浮点数
+            raise TypeError(f"Type {type(obj)} not serializable")
+        # 直接使用自定义 encoder 转换为 JSON 字符串
+        json_content = json.dumps(results, default=decimal_default,ensure_ascii=False)
 
-    print(result)
-    print("\n" + "=" * 60)
+        # 生成样本数据（最多 5 条）
+        sample_size = min(5, len(results))
+        sample_data = results[:sample_size]
+        sample_json_content = json.dumps(sample_data,default=decimal_default, indent=2,ensure_ascii=False)
 
+        logger.info(f"Query executed successfully. Rows: {data_length}")
 
-def test_date_function():
-    """测试日期函数."""
-    print("=" * 60)
-    print("测试日期函数")
-    print("=" * 60)
-
-    date_func = create_date_function()
-
-    print(f"当前年月: {date_func('Y-m')}")
-    print(f"本年: {date_func('Y')}")
-    print(f"本月: {date_func('Y')}-{date_func('m')}")
-    print(f"上个月: {date_func('Y-m', 'Month-1')}")
-    print(f"今天: {date_func('Y-m-d')}")
-    print(f"近30天开始: {date_func('Y-m-d', 'Day-29')}")
-    print(f"本周开始: {date_func('Y-m-d', 'WeekBegin')}")
-    print(f"本周结束: {date_func('Y-m-d', 'WeekEnd')}")
-
-    print("\n" + "=" * 60)
-
-
-def test_sql_extraction():
-    """测试 SQL 提取."""
-    print("=" * 60)
-    print("测试 SQL 提取")
-    print("=" * 60)
-
-    from app.graph.node.data_query import capture_sql_blocks
-
-    test_cases = [
-        # 标准 SQL 代码块
-        '这是一些文本\n```sql\nSELECT * FROM users\n```',
-        # 多个 SQL 代码块
-        '```sql\nSELECT 1\n```\n```sql\nSELECT 2\n```',
-        # 没有语言标识的代码块
-        '```\nSELECT * FROM table\n```',
-    ]
-
-    for i, test in enumerate(test_cases, 1):
-        sqls = capture_sql_blocks(test)
-        print(f"测试 {i}: 找到 {len(sqls)} 个 SQL 代码块")
-        for sql in sqls:
-            print(f"  SQL: {sql.strip()}")
-
-    print("\n" + "=" * 60)
-
-
-def test_data_query_node():
-    """测试 DataQuery 节点."""
-    print("=" * 60)
-    print("测试 DataQuery 节点")
-    print("=" * 60)
-
-    # 创建模拟的 State
-    state = {
-        "SessionId": "test_session",
-        "SessionMessgeId": "test_msg_id",
-        "UserQuery": "请查询近30天幽灵党影片的点击次数是多少？",
-        "LlmModelName": "qwen-max",
-        "LlmTemperature": 0.1,
-        "Messages": [],
-        "SupervisorMessages": [],
-        "CurrentDatetime": datetime.datetime.now(),
-        "LlmCalls": [],
-        "ForceEnd": False,
-        "IsBlocked": False,
-        "BlockReason": "",
-        "UnderstandResult": {},
-        "Response": "",
-        "UserRole": "MR",
-        "DataQueryTask": "请查询近30天幽灵党影片的点击次数是多少？",
-        "DataQueryTable": "app.content_analysis",
-        "DataQueryModule": "default",
-        "SqlGenResult": {},
-        "DataQueryResult": {},
-    }
-
-    # 调用节点
-    result = data_query_node_simple(state)
-
-    print(f"生成的 SQL: {result.get('SqlGenResult', {}).get('Sql', 'N/A')}")
-    print(f"查询结果行数: {result.get('DataQueryResult', {}).get('DataRowLength', 0)}")
-    print(f"响应: {result.get('Response', 'N/A')[:200]}")
-
-    print("\n" + "=" * 60)
-
+        return json_content, sample_json_content, data_length
+    except Exception as e:
+        logger.error(f"Error executing SQL: {e}")
+        raise
 
 if __name__ == "__main__":
-    import io
-    # 设置 UTF-8 输出
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
-    # 运行测试
-    test_date_function()
-    test_prompt_rendering()
-    test_sql_extraction()
-    # test_data_query_node()  # 需要 LLM 服务才能运行
+    # 测试执行 SQL 查询
+    test_sql = """
+            #Description: 查询近30天幽灵党影片的点击次数。 --content_name: 内容名称 --total_clicks_last_30_days: 近30天累计点击次数       
+            SELECT
+                content_name,
+                SUM(click_count) AS total_clicks_last_30_days
+            FROM
+                app.content_analysis
+            WHERE
+                content_name LIKE '%幽灵党%'
+            AND stat_date >= '2025-12-22'
+            AND stat_date <= '2026-01-20'
+            GROUP BY content_name
+            ORDER BY total_clicks_last_30_days DESC
+            """
+    json_content, sample_json_content, data_length = execute_sql_query(test_sql)
+    print(f"Data Length: {data_length}")
+    print(f"JSON Content: {json_content}")
+    print(f"Sample JSON Content: {sample_json_content}")

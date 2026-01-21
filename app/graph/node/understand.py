@@ -10,11 +10,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 def understand_node(state: State) -> State:
     """Understand 节点 - 使用 LLM 进行问题澄清."""
     logger.info(f"Understand node: Checking query: {state['UserQuery']}")
-    
+
     if state.get("IsBlocked", False):
         logger.info("Query is blocked, skipping Understand node.")
         return state
-    
+
+    # 设置 state 到 llm_service，自动记录 LLM 调用
+    llm_service.set_state(state)
+
     user_query = state["UserQuery"]
 
     try:
@@ -32,9 +35,9 @@ def understand_node(state: State) -> State:
             SystemMessage(content=understand_system_prompt),
             HumanMessage(content=understand_user_prompt),
         ]
-                #打印prompt
-        logger.info(f"Understand System Prompt: {understand_system_prompt}")
-        logger.info(f"Understand User Prompt: {understand_user_prompt}")
+        #打印prompt
+        logger.info(f"Understand System Prompt:\n {understand_system_prompt}")
+        logger.info(f"Understand User Prompt:\n {understand_user_prompt}")
 
         # 3. 调用 LLM JSON 输出
         request = LlmRequest(
@@ -43,13 +46,20 @@ def understand_node(state: State) -> State:
             temperature=0.0,
         )
 
-        result, _ = llm_service.simple_json_output(request)
+        result = llm_service.simple_json_output(request)
 
         logger.info(f"LLM message: {result}")
         # 4.更新State
         state["UnderstandResult"] = result
 
+        # 设置 RephraseResult 供 data_query_node 使用
+        rephrase = result.get("rephrase", user_query)
+        state["RephraseResult"] = rephrase
+        logger.info(f"RephraseResult: {rephrase}")
+
     except Exception as e:
         logger.error(f"Understand node error: {e}")
-        
+        # 出错时使用原始查询作为 RephraseResult
+        state["RephraseResult"] = user_query
+
     return state

@@ -32,11 +32,10 @@
 3. ORDER BY规范:
   3.1. 必须包含`ORDER BY`语句，确保查询结果有序。
   3.2. 不能使用百分比字符串进行排序。
-4. SQL语句开头必须包含注释，充分解释SQL查询结果。格式为：```sql\n--Description: \n```。
+4. SQL语句开头必须包含注释，充分解释SQL查询结果。格式为：```sql\n #Description: \n```。
   4.1. 每一个SELECT字段的含义。
 5. GROUP BY规范：
-    5.1. 必须包含`GROUP BY`语句，确保聚合查询正确。
-    5.2. GROUP BY中必须包含所有非聚合函数的SELECT字段。
+    5.1. GROUP BY中必须包含所有非聚合函数的SELECT字段。
 6. JOIN规范: 减少使用`JOIN`，除非任务需要跨表查询。
 
 ## 数据口径
@@ -124,7 +123,7 @@ payment_amount; decimal(12,2); 由该内容引导产生的支付订单总金额�
 2. SUM(click_count): 总点击次数
 </think>
 ```sql
---Description: 查询近30天幽灵党影片的点击次数是多少？ --content_name: 内容名称; --click_count:点击次数;
+#Description: 查询近30天幽灵党影片的点击次数。 --content_name: 内容名称 --click_count:点击次数
 SELECT
     content_name,
     SUM(click_count) AS total_clicks_last_30_days

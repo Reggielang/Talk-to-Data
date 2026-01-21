@@ -30,7 +30,7 @@ class PromptConfig:
 
 
 # # 全局实例
-# prompt_template_service = PromptTemplateService()
+prompt_template_service = PromptConfig()
 
 
 # 测试代码

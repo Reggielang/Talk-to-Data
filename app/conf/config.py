@@ -8,22 +8,25 @@ class Settings(BaseSettings):
     # LLM Configuration
     openai_api_key: str = ""
     zhipuai_api_key: str = ""
+    qwen_api_key: str = ""
     base_url: str = ""
+    qwen_base_url: str = ""
     default_llm: str = ""
+    qwen_model_name: str = ""
 
     # MySQL Configuration
     mysql_host: str = "localhost"
-    mysql_port: int = 3306
-    mysql_user: str = "root"
+    mysql_port: int = 3307
+    mysql_user: str = ""
     mysql_password: str = ""
     mysql_database: str = ""
 
     # PostgreSQL Configuration
     pg_host: str = "localhost"
     pg_port: int = 5432
-    pg_user: str = "postgres"
+    pg_user: str = "kodi"
     pg_password: str = ""
-    pg_database: str = "talktodata_meta"
+    pg_database: str = "ttd"
 
     # Redis Configuration
     redis_host: str = "localhost"

@@ -2,11 +2,8 @@ from typing import TypedDict, Annotated, Literal
 import datetime
 class MessageItem(TypedDict):
     """消息项"""
-    Id: str
     Role: Literal["user", "assistant", "system","tool"]
     Content: str
-    Error: Exception | None
-    FirstTokenAt: float | None
 
 
 class QueryResultItem(TypedDict):
@@ -26,4 +23,3 @@ class LlmCallItem(TypedDict):
     TotalTokens: int
     ComletionTokens: int
     DurationMs: int
-    FirstTokenMs: int
