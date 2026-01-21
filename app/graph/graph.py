@@ -86,6 +86,23 @@ def create_initial_state(user_query: str, model_name: str = "glm-4.6") -> State:
 
 
 if __name__ == "__main__":
+    # 生成PNG图片
+    logger.info("\n=== 生成流程图PNG ===")
+    try:
+        app.get_graph().draw_mermaid_png(output_file_path="app_graph.png")
+        print("流程图已保存为 app_graph.png")
+        mermaid = app.get_graph().draw_mermaid()
+        print("Mermaid代码：")
+        print(mermaid)
+    except Exception as e:
+        print(f"生成PNG图片失败: {e}")
+        try:
+            mermaid = app.get_graph().draw_mermaid()
+            print("Mermaid代码：")
+            print(mermaid)
+        except Exception as e2:
+            logger.error(f"Failed to draw Mermaid: {e2}")
+
     # 测试 state graph
     test_question = "近30天幽灵党影片的点击次数是多少？"
     thread_id = f"test_thread_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"

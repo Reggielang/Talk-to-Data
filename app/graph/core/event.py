@@ -1,6 +1,6 @@
 """图执行事件模型 - 参考 Go 版本的 event.go"""
 
-from typing import TypedDict, Optional, Literal
+from typing import TypedDict, Optional, Any
 import datetime
 from app.graph.core.model import MessageItem, LlmCallItem
 from app.graph.core.state import State
@@ -19,8 +19,8 @@ class EventType:
     ERROR = "error"
 
 
-class StageOutput(TypedDict):
-    """阶段输出 - 参考 Go 版本的 dto.StageOutput"""
+class StageOutput(TypedDict, total=False):
+    """阶段输出 - 参考 Go 版本的 dto.StageOutput，所有字段可选"""
     QuestionVerifiedType: Optional[str]
     SupervisorToolCalls: Optional[list[dict]]
     SqlGenResult: Optional[dict]
@@ -31,8 +31,8 @@ class StageOutput(TypedDict):
     # 可以根据需要添加更多字段
 
 
-class Event(TypedDict):
-    """图执行事件 - 参考 Go 版本的 core.Event"""
+class Event(TypedDict, total=False):
+    """图执行事件 - 参考 Go 版本的 core.Event，所有字段可选"""
     NodeName: str
     Type: str
     StageOutput: Optional[StageOutput]
@@ -50,9 +50,9 @@ class EventCollector:
     """
 
     def __init__(self):
-        self.events: list[Event] = []
+        self.events: list[dict] = []
 
-    def get_events(self) -> list[Event]:
+    def get_events(self) -> list[dict]:
         """获取所有事件"""
         return self.events
 

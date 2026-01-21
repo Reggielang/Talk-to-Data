@@ -69,7 +69,7 @@ class PostgreSQLClient:
         expired_days: int = 7,
     ) -> str:
         """创建新会话（用于测试）."""
-        session_id = str(uuid.uuid4())[:30]
+        session_id = uuid.uuid4().hex[:30]
         now = datetime.now(timezone.utc)
         from datetime import timedelta
         expired_at = now + timedelta(days=expired_days)
@@ -121,7 +121,7 @@ class PostgreSQLClient:
         referrer: Optional[str] = None,
     ) -> str:
         """创建会话消息."""
-        message_id = str(uuid.uuid4())[:30]
+        message_id = uuid.uuid4().hex[:30]
         now = datetime.now(timezone.utc)
 
         sql = """
@@ -181,7 +181,7 @@ class PostgreSQLClient:
         has_error: bool = False,
     ) -> str:
         """创建单个会话事件."""
-        event_id = str(uuid.uuid4())[:30]
+        event_id = uuid.uuid4().hex[:30]
         now = datetime.now(timezone.utc)
 
         sql = """
@@ -238,7 +238,7 @@ class PostgreSQLClient:
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
                 for event in events:
-                    event_id = str(uuid.uuid4())[:30]
+                    event_id = uuid.uuid4().hex[:30]
                     event_ids.append(event_id)
 
                     # 计算 duration_ms（从事件开始到当前时间）

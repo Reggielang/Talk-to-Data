@@ -29,7 +29,6 @@ def summary_node(state: State) -> State:
 
     # 设置 state 到 llm_service，自动记录 LLM 调用
     llm_service.set_state(state)
-    print(f"Summary State: {state}")
 
 
     try:

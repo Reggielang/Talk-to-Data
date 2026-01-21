@@ -124,7 +124,7 @@ class LlmService:
     def simple_chat(self, request: LlmRequest) -> str:
         """简单聊天，自动记录到 state."""
         start_at = datetime.now()
-        call_id = str(uuid.uuid4())
+        call_id = uuid.uuid4().hex
 
         llm = self.llm
         model_name = request.model_name or self.model
