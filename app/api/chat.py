@@ -1,5 +1,6 @@
 """Chat API 路由 - 处理对话查询请求."""
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -17,6 +18,7 @@ from app.api.schemas import (
     EventResponse,
 )
 from app.services.graph_service import graph_service
+from app.services.session_service import session_service
 from app.db.postgres import pg_client
 
 
@@ -53,7 +55,6 @@ async def chat_query(request: ChatRequest):
         final_state, event_collector = await graph_service.execute_query(
             user_query=request.query,
             session_id=request.session_id,
-            namespace_id=request.namespace_id or "default",
             user_email=request.user_email or "",
             model_name=request.model_name or "glm-4.6",
             save_events=True,
@@ -111,7 +112,6 @@ async def chat_stream(request: ChatRequest):
                 user_query=request.query,
                 session_id=session_id,
                 session_message_id=message_id,
-                namespace_id=request.namespace_id or "default",
                 user_email=request.user_email or "",
                 model_name=request.model_name or "glm-4.6",
                 save_events=True,
@@ -129,7 +129,6 @@ async def chat_stream(request: ChatRequest):
             response_data = graph_service.format_response(final_state, event_collector, request_id)
 
             # 发送完成事件
-            import json
             yield f"event: complete\ndata: {json.dumps(response_data, ensure_ascii=False)}\n\n"
 
         except Exception as e:
@@ -165,7 +164,6 @@ async def create_session(request: SessionCreateRequest):
     """
     try:
         session_id = pg_client.create_session(
-            namespace_id=request.namespace_id,
             user_sid=request.user_sid,
             user_email=request.user_email,
             note=request.note,
@@ -246,7 +244,7 @@ async def get_session_messages(
         HTTPException: 获取失败
     """
     try:
-        messages = graph_service.get_session_history(session_id, limit)
+        messages = await session_service.get_session_history(session_id, limit)
 
         return [MessageResponse(**msg) for msg in messages]
 
@@ -280,7 +278,7 @@ async def get_session_events(
         HTTPException: 获取失败
     """
     try:
-        events = graph_service.get_session_events(session_id, message_id)
+        events = await session_service.get_session_events(session_id, message_id)
 
         return [EventResponse(**_format_event(e)) for e in events]
 
@@ -296,7 +294,6 @@ def _format_event(event: dict) -> dict:
     """格式化事件数据."""
     event_body = event.get("event_body", {})
     if isinstance(event_body, str):
-        import json
         try:
             event_body = json.loads(event_body)
         except:

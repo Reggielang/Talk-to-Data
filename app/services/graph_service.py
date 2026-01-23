@@ -9,8 +9,8 @@ from loguru import logger
 from app.graph.graph import create_state_graph, app
 from app.graph.core.state import State
 from app.graph.core.event import EventCollector, create_event_collector
-from app.db.postgres import pg_client
 from app.api.response_formatter import response_formatter
+from app.services.persistence_service import persistence_service
 
 
 class GraphService:
@@ -26,7 +26,6 @@ class GraphService:
         user_query: str,
         session_id: Optional[str] = None,
         session_message_id: Optional[str] = None,
-        namespace_id: str = "default",
         user_email: str = "",
         model_name: str = "glm-4.6",
         save_events: bool = True,
@@ -37,7 +36,6 @@ class GraphService:
             user_query: 用户查询
             session_id: 会话ID，如果为空则创建新会话
             session_message_id: 会话消息ID
-            namespace_id: 命名空间ID
             user_email: 用户邮箱
             model_name: LLM 模型名称
             save_events: 是否保存事件到 PG
@@ -127,6 +125,17 @@ class GraphService:
 
             final_state = self.app.get_state(config).values
 
+            # 7. 保存会话数据到数据库
+            if save_events:
+                persistence_service.save_session_data_async(
+                    session_id=session_id,
+                    session_message_id=session_message_id,
+                    user_email=user_email,
+                    user_query=user_query,
+                    final_state=final_state,
+                    event_collector=event_collector,
+                )
+
         except Exception as e:
             logger.error(f"[GraphService] Error executing query: {e}")
             raise
@@ -145,24 +154,6 @@ class GraphService:
             格式化的响应字典
         """
         return self.formatter.format_response(state, event_collector, request_id)
-
-    def get_session_history(self, session_id: str, limit: int = 100) -> list[dict]:
-        """获取会话历史."""
-        try:
-            messages = pg_client.get_session_messages(session_id, limit)
-            return messages
-        except Exception as e:
-            logger.error(f"[GraphService] Error getting session history: {e}")
-            return []
-
-    def get_session_events(self, session_id: str, session_message_id: Optional[str] = None) -> list[dict]:
-        """获取会话事件."""
-        try:
-            events = pg_client.get_session_events(session_id, session_message_id)
-            return events
-        except Exception as e:
-            logger.error(f"[GraphService] Error getting session events: {e}")
-            return []
 
 
 # 全局单例

@@ -8,6 +8,7 @@ from loguru import logger
 import sys
 import datetime
 import uvicorn
+import time
 
 from app.api.chat import router as chat_router
 from app.conf.config import settings
@@ -66,6 +67,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """记录所有 HTTP 请求和响应."""
+    start_time = time.time()
+
+    # 记录请求
+    logger.info(f"📥 {request.method} {request.url.path}")
+
+    # 处理请求
+    response = await call_next(request)
+
+    # 记录响应
+    process_time = time.time() - start_time
+    logger.info(f"📤 {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
+
+    return response
 
 
 # 全局异常处理

@@ -1,3 +1,8 @@
+"""PostgreSQL 客户端 - 用于存储会话事件和消息.
+
+Session 的创建和管理由 FastAPI 层负责，这里只负责存储执行过程中的事件和消息。
+"""
+
 import psycopg2
 from typing import List, Dict, Any, Optional
 from contextlib import contextmanager
@@ -62,29 +67,40 @@ class PostgreSQLClient:
 
     def create_session(
         self,
-        namespace_id: str,
         user_sid: str,
         user_email: str,
         note: Optional[str] = None,
         expired_days: int = 7,
+        session_id: Optional[str] = None,
     ) -> str:
-        """创建新会话（用于测试）."""
-        session_id = uuid.uuid4().hex[:30]
+        """创建新会话.
+
+        Args:
+            user_sid: 用户会话ID
+            user_email: 用户邮箱
+            note: 备注
+            expired_days: 过期天数
+            session_id: 会话ID（可选，不提供则自动生成）
+
+        Returns:
+            会话ID
+        """
+        if session_id is None:
+            session_id = uuid.uuid4().hex[:30]
         now = datetime.now(timezone.utc)
         from datetime import timedelta
         expired_at = now + timedelta(days=expired_days)
 
         sql = """
             INSERT INTO ttd.session
-            (id, namespace_id, user_sid, user_email, note, created_at, updated_at, expired_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_sid, user_email, note, created_at, updated_at, expired_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         result = self.execute_query(
             sql,
             (
                 session_id,
-                namespace_id,
                 user_sid,
                 user_email,
                 note,
@@ -98,7 +114,7 @@ class PostgreSQLClient:
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """获取会话信息."""
         sql = """
-            SELECT id, namespace_id, user_sid, user_email, note, created_at, updated_at, expired_at
+            SELECT id, user_sid, user_email, note, created_at, updated_at, expired_at
             FROM ttd.session
             WHERE id = %s
         """
@@ -110,7 +126,6 @@ class PostgreSQLClient:
     def create_session_message(
         self,
         session_id: str,
-        namespace_id: str,
         role: str,
         content: str,
         tool_call_id: Optional[str] = None,
@@ -127,9 +142,9 @@ class PostgreSQLClient:
         sql = """
             INSERT INTO ttd.session_message
             (id, session_id, role, content, tool_call_id, created_at, updated_at,
-             namespace_id, first_token_duration_ms, total_duration_ms, referrer,
+             first_token_duration_ms, total_duration_ms, referrer,
              user_email, user_message_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         result = self.execute_query(
@@ -142,7 +157,6 @@ class PostgreSQLClient:
                 tool_call_id,
                 now,
                 now,
-                namespace_id,
                 first_token_duration_ms,
                 total_duration_ms,
                 referrer,
@@ -170,7 +184,6 @@ class PostgreSQLClient:
 
     def create_session_event(
         self,
-        namespace_id: str,
         session_id: str,
         session_message_id: str,
         user_email: str,
@@ -186,16 +199,15 @@ class PostgreSQLClient:
 
         sql = """
             INSERT INTO ttd.session_event
-            (id, namespace_id, session_id, session_message_id, user_email,
+            (id, session_id, session_message_id, user_email,
              event_body, created_at, has_error, user_query, one_ci_params, duration_ms)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         result = self.execute_query(
             sql,
             (
                 event_id,
-                namespace_id,
                 session_id,
                 session_message_id,
                 user_email,
@@ -211,7 +223,6 @@ class PostgreSQLClient:
 
     def create_session_event_batch(
         self,
-        namespace_id: str,
         session_id: str,
         session_message_id: str,
         user_email: str,
@@ -222,7 +233,6 @@ class PostgreSQLClient:
         """批量创建会话事件.
 
         Args:
-            namespace_id: 命名空间ID
             session_id: 会话ID
             session_message_id: 会话消息ID
             user_email: 用户邮箱
@@ -255,15 +265,14 @@ class PostgreSQLClient:
 
                     sql = """
                         INSERT INTO ttd.session_event
-                        (id, namespace_id, session_id, session_message_id, user_email,
+                        (id, session_id, session_message_id, user_email,
                          event_body, created_at, has_error, user_query, one_ci_params, duration_ms)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
                     cursor.execute(
                         sql,
                         (
                             event_id,
-                            namespace_id,
                             session_id,
                             session_message_id,
                             user_email,

@@ -31,7 +31,7 @@ def capture_sql_blocks(content: str) -> list[str]:
 
 def execute_sql_query(sql: str) -> tuple[str, str, int]:
     """执行 SQL 查询."""
-    logger.info(f"Executing SQL: {sql}...")
+    logger.info(f"Executing SQL: {sql}")
     try:
         results = mysql_client.execute_query(sql)
         data_length = len(results)
