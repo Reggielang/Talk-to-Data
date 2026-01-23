@@ -150,13 +150,13 @@ def data_query_node(state: State) -> State:
             # 继续优化
             last_chance = success_iterations == max_success_iterations - 1
             consistency_prompt = prompt_config.render(
-                "data_query_user.j2",
-                QueryResult=query_result_sample,
-                LastChance=last_chance,
-                MoreThanSampleData=data_length > 5,
-                SampleDataLength=5,
-                QueryResultLength=data_length,
-                Task=task,
+                "data_query_consistency_user.j2",
+                queryresult=query_result_sample,
+                lastchance=last_chance,
+                morethansampledata=data_length > 5,
+                sampledatalength=5,
+                queryresultlength=data_length,
+                task=task,
             )
             messages.append(HumanMessage(content=consistency_prompt))
 

@@ -6,6 +6,9 @@ from app.conf.prompt_init import prompt_template_service
 from app.services.llm_service import llm_service, LlmRequest
 from langchain_core.messages import HumanMessage, SystemMessage
 
+# 历史消息保留长度
+HISTORY_LENGTH = 4
+
 
 def understand_node(state: State) -> State:
     """Understand 节点 - 使用 LLM 进行问题澄清."""
@@ -20,13 +23,31 @@ def understand_node(state: State) -> State:
 
     user_query = state["UserQuery"]
 
+    # 只保留 user 消息，并限制历史长度
+    all_messages = state.get("Messages", [])
+
+    # Debug logging
+    logger.info(f"[Understand] Received {len(all_messages)} messages from state:")
+    for i, msg in enumerate(all_messages):
+        logger.info(f"  [{i}] role={msg.get('role')}, content={msg.get('content', '(empty)')[:50]}")
+
+    # 过滤只保留 user 消息
+    user_messages = [msg for msg in all_messages if msg.get("role") == "user"]
+
+    logger.info(f"[Understand] Filtered to {len(user_messages)} user messages")
+
+    # 只保留最近 HISTORY_LENGTH 条消息
+    if len(user_messages) > HISTORY_LENGTH:
+        user_messages = user_messages[-HISTORY_LENGTH:]
+        logger.info(f"[Understand] Trimmed to last {HISTORY_LENGTH} user messages")
+
     try:
         # 1. 渲染提示词模板
         understand_system_prompt = prompt_template_service.render("understand_system.j2")
 
         understand_user_prompt = prompt_template_service.render(
             "understand_user.j2",
-            messages=state.get("Messages", []),
+            messages=user_messages,
             question=user_query,
         )
 
@@ -53,7 +74,7 @@ def understand_node(state: State) -> State:
         state["UnderstandResult"] = result
 
         # 设置 RephraseResult 供 data_query_node 使用
-        rephrase = result.get("rephrase", user_query)
+        rephrase = result.get("question", user_query)
         state["RephraseResult"] = rephrase
         logger.info(f"RephraseResult: {rephrase}")
 

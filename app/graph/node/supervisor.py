@@ -154,6 +154,10 @@ def supervisor_node(state: State) -> State:
         # 构建消息
         user_content = f"用户请求: {user_query}"
 
+        # 打印 prompt
+        logger.info(f"Supervisor System Prompt:\n{system_prompt}")
+        logger.info(f"Supervisor User Prompt:\n{user_content}")
+
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_content),
