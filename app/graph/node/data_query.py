@@ -74,6 +74,7 @@ def data_query_node(state: State) -> State:
             table=table,
             task=task,
         )
+        logger.info(f"DataQuery System Prompt:\n {system_prompt}")
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -159,6 +160,7 @@ def data_query_node(state: State) -> State:
                 task=task,
             )
             messages.append(HumanMessage(content=consistency_prompt))
+            logger.info(f"DataQuery Consistency Prompt:\n {consistency_prompt}")
 
         # 更新 State
         state["SqlGenResult"] = {"Sql": sql}

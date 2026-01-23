@@ -63,6 +63,8 @@ def summary_node(state: State) -> State:
             HumanMessage(content=user_prompt),
         ]
 
+        logger.info(f"Summary System Prompt:\n {system_prompt}")
+
         request = LlmRequest(
             messages=messages,
             model_name=state.get("LlmModelName"),
@@ -72,7 +74,7 @@ def summary_node(state: State) -> State:
         summary_result = llm_service.simple_chat(request)
 
         state["SummarizeResult"] = summary_result
-
+        logger.info(f"Summary User Prompt:\n {user_prompt}")
         logger.info(f"Summary node completed:\n {summary_result}")
 
     except Exception as e:
