@@ -17,7 +17,6 @@ class ChatRequest(BaseModel):
     """聊天请求模型"""
     query: str = Field(..., description="用户查询问题", min_length=1, max_length=2000)
     session_id: Optional[str] = Field(None, description="会话ID，如果为空则创建新会话")
-    namespace_id: Optional[str] = Field("default", description="命名空间ID")
     user_email: Optional[str] = Field("", description="用户邮箱")
     model_name: Optional[str] = Field("glm-4.6", description="LLM 模型名称")
     stream: Optional[bool] = Field(False, description="是否使用流式响应")
@@ -55,7 +54,6 @@ class ChatResponse(BaseModel):
 
 class SessionCreateRequest(BaseModel):
     """创建会话请求"""
-    namespace_id: str = Field(..., description="命名空间ID")
     user_sid: str = Field(..., description="用户会话ID")
     user_email: str = Field(..., description="用户邮箱")
     note: Optional[str] = Field(None, description="备注")
@@ -64,7 +62,6 @@ class SessionCreateRequest(BaseModel):
 class SessionResponse(BaseModel):
     """会话响应"""
     session_id: str
-    namespace_id: str
     user_sid: str
     user_email: str
     note: Optional[str]
