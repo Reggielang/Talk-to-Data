@@ -8,7 +8,7 @@ from loguru import logger
 from app.graph.node import block, understand, data_query, postprocess, summary, supervisor
 from app.graph.node.supervisor import route_from_supervisor
 from app.graph.core.state import State
-
+from langgraph.checkpoint.memory import MemorySaver
 
 def create_state_graph(checkpointer=None) -> StateGraph[State]:
     """创建对话状态图."""
@@ -49,7 +49,8 @@ def create_state_graph(checkpointer=None) -> StateGraph[State]:
     return graph
 
 
-# 编译图（绑定 checkpointer）
+# 编译图（使用 checkpointer，但 Messages 使用普通 list 避免累加）
+
 checkpointer = MemorySaver()
 app = create_state_graph().compile(checkpointer=checkpointer)
 

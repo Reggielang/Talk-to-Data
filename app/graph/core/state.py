@@ -1,5 +1,4 @@
 from typing import TypedDict, Annotated
-import operator
 import datetime
 from app.graph.core.model import LlmCallItem
 
@@ -10,7 +9,7 @@ class State(TypedDict):
     UserQuery: str
     LlmModelName: str
     LlmTemperature: float
-    Messages: Annotated[list, operator.add]
+    Messages: list  # 直接使用 list，让 LangGraph 默认处理（替换而不是累加）
     CurrentDatetime: datetime.datetime
     LlmCalls: list[LlmCallItem]
     ForceEnd: bool

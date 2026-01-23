@@ -2,11 +2,27 @@
 
 import json
 import uuid
+import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from langchain_core.runnables.config import RunnableConfig
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """自定义 JSON 编码器，处理 datetime 对象."""
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+def generate_short_id() -> str:
+    """生成 UUID 作为 ID（去掉连字符，限制在30字符以内）."""
+    return uuid.uuid4().hex[:30]
 
 from app.api.schemas import (
     ChatRequest,
@@ -19,7 +35,12 @@ from app.api.schemas import (
 )
 from app.services.graph_service import graph_service
 from app.services.session_service import session_service
+from app.services.persistence_service import persistence_service
 from app.db.postgres import pg_client
+from app.graph.graph import app
+from app.graph.core.state import State
+from app.graph.core.event import create_event_collector
+from app.api.response_formatter import response_formatter
 
 
 router = APIRouter(
@@ -48,16 +69,25 @@ async def chat_query(request: ChatRequest):
     try:
         logger.info(f"[ChatAPI] Received query: {request.query[:100]}...")
 
+        # Debug logging: 打印接收到的历史消息
+        logger.info(f"[ChatAPI] Received {len(request.messages or [])} history messages in request:")
+        for i, msg in enumerate(request.messages or []):
+            logger.info(f"  [{i}] role={msg.get('role')}, content={msg.get('content', '(empty)')[:50]}")
+
         # 生成请求ID
-        request_id = uuid.uuid4().hex[:20]
+        request_id = generate_short_id()
+
+        # 确保前端传入的 session_id 不超过30字符
+        session_id = (request.session_id[:30] if request.session_id else None)
 
         # 执行查询
         final_state, event_collector = await graph_service.execute_query(
             user_query=request.query,
-            session_id=request.session_id,
+            session_id=session_id,
             user_email=request.user_email or "",
             model_name=request.model_name or "glm-4.6",
             save_events=True,
+            messages=request.messages,
         )
 
         # 格式化响应（新的事件结构）
@@ -98,41 +128,131 @@ async def chat_stream(request: ChatRequest):
         )
 
     async def event_generator():
-        """生成 SSE 事件."""
+        """生成 SSE 事件 - 实时流式发送每个节点的数据."""
         try:
-            request_id = uuid.uuid4().hex[:20]
-            session_id = request.session_id or uuid.uuid4().hex[:30]
-            message_id = uuid.uuid4().hex[:30]
+            request_id = generate_short_id()
+            session_id = (request.session_id[:30] if request.session_id else None) or generate_short_id()
+            message_id = generate_short_id()
+            model_name = request.model_name or "glm-4.6"
+            user_email = request.user_email or ""
 
             # 发送开始事件
             yield f"event: start\ndata: {{\"type\":\"start\",\"request_id\":\"{request_id}\",\"session_id\":\"{session_id}\",\"message_id\":\"{message_id}\"}}\n\n"
 
-            # 执行查询
-            final_state, event_collector = await graph_service.execute_query(
-                user_query=request.query,
-                session_id=session_id,
-                session_message_id=message_id,
-                user_email=request.user_email or "",
-                model_name=request.model_name or "glm-4.6",
-                save_events=True,
+            # Debug logging: 打印接收到的历史消息
+            logger.info(f"[ChatAPI] Received {len(request.messages or [])} history messages in request:")
+            for i, msg in enumerate(request.messages or []):
+                logger.info(f"  [{i}] role={msg.get('role')}, content={msg.get('content', '(empty)')[:50]}")
+
+            # 创建初始状态
+            initial_state = State(
+                SessionId=session_id,
+                SessionMessgeId=message_id,
+                UserQuery=request.query,
+                LlmModelName=model_name,
+                LlmTemperature=0.1,
+                Messages=request.messages or [],  # 使用历史消息
+                CurrentDatetime=datetime.now(),
+                LlmCalls=[],
+                ForceEnd=False,
+                IsBlocked=False,
+                BlockReason="",
+                RephraseResult="",
+                UnderstandResult={},
+                DataQueryTask="",
+                DataQueryTable="",
+                SqlGenResult={},
+                DataQueryResult={},
+                PostProcessTask="",
+                PostProcessDatasetId="",
+                PostProcessResult={},
+                SummarizeDatasetId="",
+                SummarizeResult="",
+                Datasets={},
+                DataQueryRethinkTimes=0,
+                PostprocessRethinkTimes=0,
             )
 
-            # 发送进度事件（每个节点）
-            events = event_collector.get_events()
-            for event in events:
-                node_name = event.get("NodeName", "")
-                event_type = event.get("Type", "")
-                if node_name and event_type:
-                    yield f"event: progress\ndata: {{\"node\":\"{node_name}\",\"type\":\"{event_type}\"}}\n\n"
+            thread_id = f"{session_id}_{message_id}"
+            config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+            event_collector = create_event_collector()
 
-            # 格式化最终结果（新的事件结构）
-            response_data = graph_service.format_response(final_state, event_collector, request_id)
+            # 实时执行图并流式发送每个节点的数据
+            node_events = []
+            for event in app.stream(initial_state, config):
+                for node_name, node_state in event.items():
+                    if node_name in ["__start__", "__end__"]:
+                        continue
+
+                    logger.info(f"[ChatAPI] [{node_name}] 完成")
+
+                    # 添加事件到收集器
+                    event_data = {
+                        "NodeName": node_name,
+                        "Type": "NODE_START",
+                        "CurrentState": dict(node_state) if node_state else {},
+                        "LlmCalls": list(node_state.get("LlmCalls", [])) if node_state else [],
+                        "Timestamp": datetime.now(timezone.utc),
+                    }
+                    event_collector.events.append(event_data)
+                    node_events.append(event_data)
+
+                    # 格式化当前节点的输出
+                    stage_output = response_formatter._build_stage_output(
+                        node_name, node_state, [], session_id, message_id
+                    )
+
+                    # 构建节点事件数据
+                    node_event = {
+                        "Stage": response_formatter.NODE_NAME_MAP.get(node_name, node_name),
+                        "Type": f"data-{response_formatter.NODE_NAME_MAP.get(node_name, node_name).lower()}",
+                        "SessionId": session_id,
+                        "SessionMessageId": message_id,
+                    }
+                    if stage_output:
+                        node_event["StageOutput"] = stage_output
+
+                    # 立即发送该节点的数据
+                    yield f"event: node\ndata: {json.dumps(node_event, ensure_ascii=False, cls=DateTimeEncoder)}\n\n"
+
+                    # 发送节点完成标记
+                    yield f"event: finish-step\ndata: {{\"node\":\"{node_name}\"}}\n\n"
+
+            # 获取最终状态
+            final_state = app.get_state(config).values
+
+            # 处理 Summary 节点的 text-delta 事件
+            if final_state.get("SummarizeResult"):
+                summary_event = {
+                    "Stage": "Summary",
+                    "Type": "text-delta",
+                    "SessionId": session_id,
+                    "SessionMessageId": message_id,
+                    "Message": {
+                        "Content": final_state.get("SummarizeResult"),
+                        "Role": "assistant",
+                        "Type": "summary",
+                    },
+                }
+                yield f"event: node\ndata: {json.dumps(summary_event, ensure_ascii=False, cls=DateTimeEncoder)}\n\n"
+
+            # 异步保存会话数据（不阻塞响应）
+            persistence_service.save_session_data_async(
+                session_id=session_id,
+                session_message_id=message_id,
+                user_email=user_email,
+                user_query=request.query,
+                final_state=final_state,
+                event_collector=event_collector,
+            )
 
             # 发送完成事件
-            yield f"event: complete\ndata: {json.dumps(response_data, ensure_ascii=False)}\n\n"
+            yield f"event: complete\ndata: {{\"request_id\":\"{request_id}\",\"session_id\":\"{session_id}\"}}\n\n"
 
         except Exception as e:
             logger.error(f"[ChatAPI] Error in stream: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             yield f"event: error\ndata: {{\"error\":\"{str(e)}\"}}\n\n"
 
     return StreamingResponse(

@@ -12,6 +12,13 @@ from app.db.base import async_session_factory
 from app.db.postgres import pg_client
 
 
+def _truncate_id(id_value: Optional[str], max_length: int = 30) -> Optional[str]:
+    """截断 ID 到指定长度，防止数据库字段超长."""
+    if id_value is None:
+        return None
+    return id_value[:max_length] if len(id_value) > max_length else id_value
+
+
 class PersistenceService:
     """异步持久化服务 - 使用后台任务保存会话数据."""
 
@@ -65,6 +72,10 @@ class PersistenceService:
     ) -> None:
         """实际保存会话数据的后台任务."""
         try:
+            # 截断 ID 防止数据库字段超长
+            session_id = _truncate_id(session_id, 30)
+            session_message_id = _truncate_id(session_message_id, 30)
+
             logger.info(f"[PersistenceService] Saving session data for {session_id}/{session_message_id}")
 
             # 1. 确保会话存在
@@ -137,7 +148,10 @@ class PersistenceService:
         total_duration_ms: Optional[int] = None,
     ) -> str:
         """创建会话消息."""
-        message_id = user_message_id if user_message_id else uuid.uuid4().hex[:30]
+        # 截断所有 ID 防止数据库字段超长
+        session_id = _truncate_id(session_id, 30)
+        user_message_id = _truncate_id(user_message_id, 30)
+        message_id = user_message_id if user_message_id else _truncate_id(uuid.uuid4().hex, 30)
         now = datetime.now(timezone.utc)
 
         try:
@@ -187,10 +201,14 @@ class PersistenceService:
         """批量创建会话事件."""
         event_ids = []
 
+        # 截断所有 ID 防止数据库字段超长
+        session_id = _truncate_id(session_id, 30)
+        session_message_id = _truncate_id(session_message_id, 30)
+
         try:
             async with async_session_factory() as session:
                 for event in events:
-                    event_id = uuid.uuid4().hex[:30]
+                    event_id = _truncate_id(uuid.uuid4().hex, 30)
                     event_ids.append(event_id)
 
                     # 计算 duration_ms

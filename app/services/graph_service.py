@@ -29,6 +29,7 @@ class GraphService:
         user_email: str = "",
         model_name: str = "glm-4.6",
         save_events: bool = True,
+        messages: list = None,
     ) -> tuple[dict, EventCollector]:
         """执行查询并返回结果.
 
@@ -39,6 +40,7 @@ class GraphService:
             user_email: 用户邮箱
             model_name: LLM 模型名称
             save_events: 是否保存事件到 PG
+            messages: 历史消息列表
 
         Returns:
             (最终状态, 事件收集器)
@@ -59,7 +61,7 @@ class GraphService:
             UserQuery=user_query,
             LlmModelName=model_name,
             LlmTemperature=0.1,
-            Messages=[],
+            Messages=messages or [],  # 使用传入的历史消息
             CurrentDatetime=datetime.now(),
             LlmCalls=[],
             ForceEnd=False,
@@ -80,6 +82,10 @@ class GraphService:
             DataQueryRethinkTimes=0,
             PostprocessRethinkTimes=0,
         )
+
+        logger.info(f"[GraphService] Initial state Messages count: {len(initial_state.get('Messages', []))}")
+        for i, msg in enumerate(initial_state.get('Messages', [])):
+            logger.info(f"  [{i}] role={msg.get('role')}, content={msg.get('content', '(empty)')[:50]}")
 
         # 4. 创建配置
         thread_id = f"{session_id}_{session_message_id}"
@@ -106,6 +112,12 @@ class GraphService:
                         continue
 
                     logger.info(f"[GraphService] [{node_name}] 完成")
+
+                    # Debug: 打印节点执行后的 Messages 状态
+                    node_messages = node_state.get("Messages", []) if node_state else []
+                    logger.info(f"[GraphService] After {node_name}, Messages count: {len(node_messages)}")
+                    for i, msg in enumerate(node_messages):
+                        logger.info(f"  [{i}] role={msg.get('role')}, content={msg.get('content', '(empty)')[:50]}")
 
                     event_collector.events.append({
                         "NodeName": node_name,

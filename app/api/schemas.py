@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     user_email: Optional[str] = Field("", description="用户邮箱")
     model_name: Optional[str] = Field("glm-4.6", description="LLM 模型名称")
     stream: Optional[bool] = Field(False, description="是否使用流式响应")
+    messages: Optional[list[dict]] = Field(default_factory=list, description="历史消息列表")
 
 
 # ============== 新的响应结构模型 ==============
