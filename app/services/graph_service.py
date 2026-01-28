@@ -150,7 +150,7 @@ class GraphService:
         event_collector = create_event_collector()
 
         # 6. 异步执行图并收集事件（在线程池中执行同步代码）
-        logger.info(f"[GraphService] Executing query: {user_query[:100]}...")
+        logger.info(f"[GraphService] Executing query: {user_query}")
         logger.info(f"[GraphService] session_id={session_id}, message_id={session_message_id}")
 
         try:
@@ -174,7 +174,6 @@ class GraphService:
                     })
                     continue
 
-                logger.info(f"[GraphService] [{node_name}] 完成")
 
                 # # Debug: 打印节点执行后的 Messages 状态
                 # node_messages = node_state.get("Messages", []) if node_state else []

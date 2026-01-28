@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
@@ -10,8 +10,10 @@ from loguru import logger
 from app.graph.core.state import State
 from app.conf.prompt_init import PromptConfig
 from app.conf.utils.prompt_parms import create_date_function
-from app.services.llm_service import llm_service, LlmRequest
+from app.services.llm_service import llm_service, LlmRequest, convert_to_message_items
+from app.services.elasticsearch_service import elasticsearch_service
 from app.db.mysql import mysql_client
+from app.graph.core.model import create_llm_call
 from decimal import Decimal
 
 
@@ -58,12 +60,20 @@ def data_query_node(state: State) -> State:
     if state.get("IsBlocked", False):
         return state
 
-    llm_service.set_state(state)
-
     try:
         task = state.get("DataQueryTask", "")
         table = state.get("DataQueryTable", "")
         logger.info(f"DataQuery task: {task}, table: {table}")
+
+        # 从 ES 检索 Few-Shot 示例
+        fewshot_examples = elasticsearch_service.search_fewshot_sql(
+            query_text=task,
+            top_k=3,
+            min_score=0.3,
+        )
+        fewshot_prompt = elasticsearch_service.format_fewshot_examples(fewshot_examples)
+        if fewshot_prompt:
+            logger.info(f"Retrieved {len(fewshot_examples)} few-shot examples from ES")
 
         prompt_config = PromptConfig()
         date_func = create_date_function(state.get("CurrentDatetime", datetime.now()))
@@ -73,6 +83,7 @@ def data_query_node(state: State) -> State:
             date=date_func,
             table=table,
             task=task,
+            fewshot_examples=fewshot_prompt,
         )
         logger.info(f"DataQuery System Prompt:\n {system_prompt}")
 
@@ -101,12 +112,29 @@ def data_query_node(state: State) -> State:
         while current_iteration < max_iterations and success_iterations < max_success_iterations:
             current_iteration += 1
 
+            # 调用 LLM（手动记录 LLM 调用）
+            start_at = datetime.now(timezone.utc)
+
             request = LlmRequest(
                 messages=messages,
                 model_name=state.get("LlmModelName"),
                 temperature=0.1,
             )
+
             assistant_content = llm_service.simple_chat(request)
+
+            end_at = datetime.now(timezone.utc)
+
+            # 记录 LLM 调用
+            llm_call = create_llm_call(
+                messages=convert_to_message_items(messages),
+                response_content=assistant_content,
+                model_name=state.get("LlmModelName"),
+                temperature=0.1,
+                start_at=start_at,
+                end_at=end_at,
+            )
+            state["LlmCalls"].append(llm_call)
 
             if "我认为不需要修改" in assistant_content:
                 break
@@ -163,7 +191,7 @@ def data_query_node(state: State) -> State:
             logger.info(f"DataQuery Consistency Prompt:\n {consistency_prompt}")
 
         # 更新 State
-        state["SqlGenResult"] = {"Sql": sql}
+        state["SqlGenResult"] = {"SQL": sql}
         state["DataQueryResult"] = {
             "JsonContent": query_result,
             "SampleData": query_result_sample,

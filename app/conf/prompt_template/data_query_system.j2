@@ -134,3 +134,7 @@ WHERE
   AND stat_date < '{{ date("Y-m-d") }}'
 GROUP BY content_name
 ```
+
+{% if fewshot_examples %}
+{{ fewshot_examples }}
+{% endif %}

@@ -2,14 +2,15 @@
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 from app.graph.core.state import State
 from app.conf.prompt_init import PromptConfig
 from app.conf.utils.prompt_parms import create_date_function
-from app.services.llm_service import llm_service, LlmRequest
+from app.services.llm_service import llm_service, LlmRequest, convert_to_message_items
+from app.graph.core.model import create_llm_call
 
 
 class ToolUse:
@@ -125,9 +126,6 @@ def supervisor_node(state: State) -> State:
         logger.info("Query is blocked, skipping Supervisor node.")
         return state
 
-    # 设置 state 到 llm_service，自动记录 LLM 调用
-    llm_service.set_state(state)
-
     try:
         # 获取当前状态
         datasets = state.get("Datasets", {})
@@ -163,14 +161,26 @@ def supervisor_node(state: State) -> State:
             HumanMessage(content=user_content),
         ]
 
-        # 生成工具调用
+        # 生成工具调用（手动记录 LLM 调用）
         request = LlmRequest(
             messages=messages,
             model_name=state.get("LlmModelName"),
             temperature=0.1,
         )
 
+        start_at = datetime.now(timezone.utc)
         response = llm_service.simple_chat(request)
+        end_at = datetime.now(timezone.utc)
+
+        llm_call = create_llm_call(
+            messages=convert_to_message_items(messages),
+            response_content=response,
+            model_name=state.get("LlmModelName", ""),
+            temperature=0.1,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        state["LlmCalls"].append(llm_call)
 
         # 提取和验证工具调用
         tool_use = extract_tool_use_from_content(response)

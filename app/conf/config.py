@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     pg_password: str = ""
     pg_database: str = "ttd"
 
+    # Elasticsearch Configuration
+    es_host: str = "localhost"
+    es_port: int = 9200
+    es_user: str = ""
+    es_password: str = ""
+    es_index: str = "fewshot_sql"
+    es_scheme: str = "http"
+
     # Redis Configuration
     redis_host: str = "localhost"
     redis_port: int = 6379

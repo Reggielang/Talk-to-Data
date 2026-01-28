@@ -9,7 +9,7 @@ from typing import Optional
 
 from app.db.models import SessionMessageModel, SessionEventModel
 from app.db.base import async_session_factory
-from app.db.postgres import pg_client
+from app.services.session_service import session_service
 
 
 def _truncate_id(id_value: Optional[str], max_length: int = 30) -> Optional[str]:
@@ -78,15 +78,12 @@ class PersistenceService:
 
             logger.info(f"[PersistenceService] Saving session data for {session_id}/{session_message_id}")
 
-            # 1. 确保会话存在
-            existing_session = pg_client.get_session(session_id)
-            if not existing_session:
-                pg_client.create_session(
-                    user_sid=session_id,
-                    user_email=user_email,
-                    session_id=session_id,  # 使用指定的 session_id
-                )
-                logger.info(f"[PersistenceService] Created new session: {session_id}")
+            # 1. 确保会话存在（使用异步 session_service）
+            await session_service.ensure_session_exists(
+                session_id=session_id,
+                user_email=user_email,
+            )
+            logger.info(f"[PersistenceService] Session ensured: {session_id}")
 
             # 2. 保存用户消息
             await self._create_message(
@@ -178,9 +175,9 @@ class PersistenceService:
             raise
 
     def _clean_event_for_json(self, event: dict) -> dict:
-        """清理 event 中的不可 JSON 序列化的对象（如 datetime）。
+        """清理 event 中的不可 JSON 序列化的对象（如 datetime）.
 
-        使用 json.dumps + json.loads 方式，比递归深拷贝更高效。
+        使用 json.dumps + json.loads 方式，比递归深拷贝更高效.
 
         Args:
             event: 原始事件字典

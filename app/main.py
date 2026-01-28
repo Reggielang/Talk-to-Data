@@ -1,17 +1,90 @@
 """TalkToData FastAPI 应用主入口."""
 
+import asyncio
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
-import sys
 import datetime
 import uvicorn
 import time
+from sqlalchemy import text
 
 from app.api.chat import router as chat_router
 from app.conf.config import settings
+from app.db.mysql import mysql_client
+from app.db.base import async_session_factory
+
+
+async def check_mysql_connection() -> bool:
+    """检查 MySQL 连接."""
+    try:
+        result = mysql_client.execute_query("SELECT 1 as ping")
+        if result and result[0].get("ping") == 1:
+            logger.info(f"✅ MySQL 连接成功: {settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"❌ MySQL 连接失败: {e}")
+        logger.error(f"   配置: host={settings.mysql_host}, port={settings.mysql_port}, database={settings.mysql_database}")
+        return False
+
+
+async def check_postgres_connection() -> bool:
+    """检查 PostgreSQL 异步连接（SQLAlchemy）."""
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+            logger.info(f"✅ PostgreSQL 连接成功: {settings.pg_host}:{settings.pg_port}/{settings.pg_database}")
+            return True
+    except Exception as e:
+        logger.error(f"❌ PostgreSQL 连接失败: {e}")
+        logger.error(f"   配置: host={settings.pg_host}, port={settings.pg_port}, database={settings.pg_database}")
+        return False
+
+
+async def startup_health_check():
+    """启动时健康检查 - 所有服务必须可用."""
+    logger.info("=" * 60)
+    logger.info("🔍 开始启动时健康检查...")
+    logger.info("=" * 60)
+
+    checks = {
+        "MySQL": check_mysql_connection(),
+        "PostgreSQL": check_postgres_connection(),
+    }
+
+    results = {}
+    for name, coro in checks.items():
+        try:
+            results[name] = await coro
+        except Exception as e:
+            logger.error(f"❌ {name} 检查异常: {e}")
+            results[name] = False
+
+    logger.info("=" * 60)
+
+    # 检查结果
+    all_passed = all(results.values())
+
+    if all_passed:
+        logger.info("🎉 所有服务连接检查通过！")
+        logger.info("=" * 60)
+    else:
+        failed_services = [name for name, passed in results.items() if not passed]
+        logger.error(f"❌ 以下服务连接失败: {', '.join(failed_services)}")
+        logger.error("=" * 60)
+        logger.error("")
+        logger.error("🚨 项目无法启动！请检查:")
+        logger.error("   1. 数据库服务是否运行")
+        logger.error("   2. .env 配置是否正确")
+        logger.error("   3. 网络连接是否正常")
+        logger.error("")
+        raise RuntimeError(f"服务连接失败: {', '.join(failed_services)}")
+
+    return all_passed
 
 
 @asynccontextmanager
@@ -20,10 +93,8 @@ async def lifespan(app: FastAPI):
     # 启动逻辑
     logger.info("Starting TalkToData API...")
 
-    # 这里可以添加初始化代码
-    # 例如：
-    # await init_database()
-    # await load_models()
+    # 健康检查 - 失败则阻止启动
+    await startup_health_check()
 
     yield
 
