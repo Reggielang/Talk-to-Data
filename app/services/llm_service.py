@@ -1,8 +1,7 @@
-"""LLM 服务"""
-from typing import Optional, Dict, Any, List
+"""LLM 服务 - 无状态设计，仅负责调用 LLM."""
+from typing import Optional, Dict, List, Any
 from dataclasses import dataclass
 from datetime import datetime
-import time
 import uuid
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
@@ -14,9 +13,7 @@ from langchain_core.messages import (
 )
 from loguru import logger
 from app.conf.config import settings
-from app.graph.core.model import LlmCallItem, MessageItem
-from app.graph.core.state import State
-import json
+from app.graph.core.model import MessageItem
 
 
 @dataclass
@@ -51,7 +48,7 @@ def convert_to_message_items(messages: List[BaseMessage]) -> List[MessageItem]:
 
 
 class LlmService:
-    """LLM 服务."""
+    """LLM 服务 - 无状态，线程安全."""
 
     def __init__(
         self,
@@ -73,69 +70,19 @@ class LlmService:
             base_url=self.base_url,
         )
 
-        self._state: Optional[State] = None
-
         logger.info(f"LlmService initialized with model: {self.model}")
 
-    def set_state(self, state: State):
-        """设置当前处理的 state，用于自动记录 LLM 调用."""
-        self._state = state
-
-    def _create_and_record_llm_call(
-        self,
-        call_id: str,
-        start_at: datetime,
-        end_at: datetime,
-        message_items: List[MessageItem],
-        response_content: str,
-        model_name: str,
-        temperature: float,
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0,
-        total_tokens: int = 0,
-    ):
-        """创建并记录 LLM 调用."""
-        duration_ms = int((end_at - start_at).total_seconds() * 1000)
-
-        # 添加助手回复到消息列表
-        message_items.append(MessageItem(
-            Role="assistant",
-            Content=response_content,
-        ))
-
-        # 创建 LLM 调用记录
-        llm_call_item = LlmCallItem(
-            Id=call_id,
-            StartAt=start_at,
-            EndAt=end_at,
-            Messages=message_items,
-            ModelName=model_name,
-            Temperature=temperature,
-            PromptTokens=prompt_tokens,
-            TotalTokens=total_tokens,
-            ComletionTokens=completion_tokens,
-            DurationMs=duration_ms,
-        )
-
-        # 自动记录到 state
-        if self._state is not None:
-            self._state["LlmCalls"].append(llm_call_item)
-
     def simple_chat(self, request: LlmRequest) -> str:
-        """简单聊天，自动记录到 state."""
-        start_at = datetime.now()
-        call_id = uuid.uuid4().hex
+        """简单聊天，返回 LLM 响应内容.
 
+        注意：不再自动记录 LlmCalls，由调用方自行处理。
+        """
         llm = self.llm
         model_name = request.model_name or self.model
         temperature = request.temperature or self.temperature
 
-        # 转换消息
-        message_items = convert_to_message_items(request.messages)
-
         try:
             response = llm.invoke(request.messages)
-            end_at = datetime.now()
 
             # 处理 content
             content = response.content
@@ -144,54 +91,18 @@ class LlmService:
             else:
                 content = str(content)
 
-            # 获取 token 使用情况
-            prompt_tokens = 0
-            completion_tokens = 0
-            total_tokens = 0
-
-            if hasattr(response, 'usage_metadata') and response.usage_metadata:
-                prompt_tokens = response.usage_metadata.get('input_tokens', 0)
-                completion_tokens = response.usage_metadata.get('output_tokens', 0)
-                total_tokens = response.usage_metadata.get('total_tokens', 0)
-
-            # 创建并记录 LLM 调用
-            self._create_and_record_llm_call(
-                call_id=call_id,
-                start_at=start_at,
-                end_at=end_at,
-                message_items=message_items,
-                response_content=content,
-                model_name=model_name,
-                temperature=temperature,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-            )
-
             return content
 
         except Exception as e:
-            end_at = datetime.now()
-            logger.error(f"simple_chat error: {e}")
-
-            # 即使出错也记录
-            self._create_and_record_llm_call(
-                call_id=call_id,
-                start_at=start_at,
-                end_at=end_at,
-                message_items=message_items,
-                response_content=str(e),
-                model_name=model_name,
-                temperature=temperature,
-            )
-
+            logger.error(f"LlmService.simple_chat error: {e}")
             raise
 
     def simple_json_output(self, request: LlmRequest) -> Dict[str, Any]:
-        """JSON 输出，自动记录到 state."""
+        """JSON 输出，返回解析后的字典."""
         content = self.simple_chat(request)
 
         try:
+            import json
             return json.loads(content)
         except Exception as e:
             logger.error(f"尝试手动提取 JSON 代码块: {e}")
@@ -209,5 +120,5 @@ class LlmService:
                 raise
 
 
-# 全局实例
+# 全局单例（无状态，线程安全）
 llm_service = LlmService()

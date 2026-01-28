@@ -7,7 +7,7 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
@@ -15,7 +15,8 @@ from loguru import logger
 from app.graph.core.state import State
 from app.conf.prompt_init import PromptConfig
 from app.conf.utils.prompt_parms import create_date_function
-from app.services.llm_service import llm_service, LlmRequest
+from app.services.llm_service import llm_service, LlmRequest, convert_to_message_items
+from app.graph.core.model import create_llm_call
 
 
 # Python 代码块提取正则
@@ -113,9 +114,6 @@ def postprocess_node(state: State) -> State:
         logger.info("Query is blocked, skipping PostProcess node.")
         return state
 
-    # 设置 state 到 llm_service，自动记录 LLM 调用
-    llm_service.set_state(state)
-
     try:
         task = state.get("PostProcessTask", "")
         dataset_ids_str = state.get("PostProcessDatasetId", "")
@@ -187,13 +185,26 @@ def postprocess_node(state: State) -> State:
         while current_iteration < max_iterations and success_iterations < max_success_iterations:
             current_iteration += 1
 
-            # 调用 LLM 生成代码
+            # 调用 LLM 生成代码（手动记录 LLM 调用）
             request = LlmRequest(
                 messages=messages,
                 model_name=state.get("LlmModelName"),
                 temperature=0.1,
             )
+
+            start_at = datetime.now(timezone.utc)
             response = llm_service.simple_chat(request)
+            end_at = datetime.now(timezone.utc)
+
+            llm_call = create_llm_call(
+                messages=convert_to_message_items(messages),
+                response_content=response,
+                model_name=state.get("LlmModelName", ""),
+                temperature=0.1,
+                start_at=start_at,
+                end_at=end_at,
+            )
+            state["LlmCalls"].append(llm_call)
 
             # 检查是否需要继续
             if "我认为不需要修改" in response:

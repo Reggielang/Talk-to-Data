@@ -1,9 +1,12 @@
 """Understand 节点 - 使用 LLM 进行问题澄清."""
 
+from datetime import datetime, timezone
 from app.graph.core.state import State
 from loguru import logger
 from app.conf.prompt_init import prompt_template_service
 from app.services.llm_service import llm_service, LlmRequest
+from app.graph.core.model import create_llm_call
+from app.services.llm_service import convert_to_message_items
 from langchain_core.messages import HumanMessage, SystemMessage
 
 # 历史消息保留长度
@@ -18,18 +21,10 @@ def understand_node(state: State) -> State:
         logger.info("Query is blocked, skipping Understand node.")
         return state
 
-    # 设置 state 到 llm_service，自动记录 LLM 调用
-    llm_service.set_state(state)
-
     user_query = state["UserQuery"]
 
     # 只保留 user 消息，并限制历史长度
     all_messages = state.get("Messages", [])
-
-    # Debug logging
-    logger.info(f"[Understand] Received {len(all_messages)} messages from state:")
-    for i, msg in enumerate(all_messages):
-        logger.info(f"  [{i}] role={msg.get('role')}, content={msg.get('content', '(empty)')[:50]}")
 
     # 过滤只保留 user 消息
     user_messages = [msg for msg in all_messages if msg.get("role") == "user"]
@@ -60,7 +55,9 @@ def understand_node(state: State) -> State:
         logger.info(f"Understand System Prompt:\n {understand_system_prompt}")
         logger.info(f"Understand User Prompt:\n {understand_user_prompt}")
 
-        # 3. 调用 LLM JSON 输出
+        # 3. 调用 LLM JSON 输出（手动记录 LLM 调用）
+        start_at = datetime.now(timezone.utc)
+
         request = LlmRequest(
             messages=messages,
             model_name=state["LlmModelName"],
@@ -68,6 +65,19 @@ def understand_node(state: State) -> State:
         )
 
         result = llm_service.simple_json_output(request)
+
+        end_at = datetime.now(timezone.utc)
+
+        # 记录 LLM 调用到 state
+        llm_call = create_llm_call(
+            messages=convert_to_message_items(messages),
+            response_content=str(result),
+            model_name=state["LlmModelName"],
+            temperature=0.0,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        state["LlmCalls"].append(llm_call)
 
         logger.info(f"LLM message: {result}")
         # 4.更新State

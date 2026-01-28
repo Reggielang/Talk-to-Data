@@ -1,7 +1,7 @@
 """Summary 节点 - 对数据查询和处理结果进行总结分析."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from loguru import logger
@@ -9,7 +9,8 @@ from loguru import logger
 from app.graph.core.state import State
 from app.conf.prompt_init import PromptConfig
 from app.conf.utils.prompt_parms import create_date_function
-from app.services.llm_service import llm_service, LlmRequest
+from app.services.llm_service import llm_service, LlmRequest, convert_to_message_items
+from app.graph.core.model import create_llm_call
 
 
 def summary_node(state: State) -> State:
@@ -26,10 +27,6 @@ def summary_node(state: State) -> State:
     if state.get("IsBlocked", False):
         logger.info("Query is blocked, skipping Summary node.")
         return state
-
-    # 设置 state 到 llm_service，自动记录 LLM 调用
-    llm_service.set_state(state)
-
 
     try:
         dataset_id = state.get("SummarizeDatasetId", "")
@@ -63,6 +60,9 @@ def summary_node(state: State) -> State:
             HumanMessage(content=user_prompt),
         ]
 
+        logger.info(f"Summary System Prompt:\n {system_prompt}")
+        logger.info(f"Summary User Prompt:\n {user_prompt}")
+
         request = LlmRequest(
             messages=messages,
             model_name=state.get("LlmModelName"),
@@ -72,7 +72,7 @@ def summary_node(state: State) -> State:
         summary_result = llm_service.simple_chat(request)
 
         state["SummarizeResult"] = summary_result
-
+        logger.info(f"Summary User Prompt:\n {user_prompt}")
         logger.info(f"Summary node completed:\n {summary_result}")
 
     except Exception as e:
