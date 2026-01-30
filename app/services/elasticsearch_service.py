@@ -1,6 +1,6 @@
 """Elasticsearch 服务 - 用于 Few-Shot SQL 示例检索."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from loguru import logger
 from app.conf.config import settings
 
@@ -22,19 +22,19 @@ class ElasticsearchService:
             return
 
         try:
-            # 构建 Elasticsearch 连接 URL
+            # 构建 Elasticsearch 连接
             if settings.es_user and settings.es_password:
                 self.client = Elasticsearch(
                     [f"{settings.es_scheme}://{settings.es_host}:{settings.es_port}"],
                     basic_auth=(settings.es_user, settings.es_password),
                     verify_certs=False,
                     ssl_show_warn=False,
+                    request_timeout=30,
                 )
             else:
                 self.client = Elasticsearch(
                     [f"{settings.es_scheme}://{settings.es_host}:{settings.es_port}"],
-                    verify_certs=False,
-                    ssl_show_warn=False,
+                    request_timeout=30,
                 )
 
             # 测试连接
@@ -201,6 +201,161 @@ class ElasticsearchService:
         sql = re.sub(r'\n\s*\n', '\n', sql)
 
         return sql.strip()
+
+    # ==================== 索引管理方法 ====================
+
+    def create_index(
+        self,
+        index_name: str,
+    ) -> Dict[str, Any]:
+        """创建 Elasticsearch 索引.
+
+        Args:
+            index_name: 索引名称
+
+        Returns:
+            操作结果，包含 success 状态和详细信息
+        """
+        if self.client is None:
+            return {"success": False, "error": "Elasticsearch client not available"}
+
+        try:
+            if self.client.indices.exists(index=index_name):
+                return {"success": False, "error": f"Index '{index_name}' already exists"}
+
+            body = {
+                "mappings": {
+                    "properties": {
+                        "id": {"type": "keyword"},
+                        "question": {"type": "text"},
+                        "content": {"type": "text"},
+                    }
+                },
+                "settings": {
+                    "number_of_shards": 1,
+                    "number_of_replicas": 1,
+                }
+            }
+
+            response = self.client.indices.create(index=index_name, body=body)
+            logger.info(f"✅ Index created: {index_name}")
+            return {"success": True, "index": index_name, "response": response}
+
+        except Exception as e:
+            logger.error(f"❌ Create index error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def delete_index(self, index_name: str) -> Dict[str, Any]:
+        """删除 Elasticsearch 索引.
+
+        Args:
+            index_name: 索引名称
+
+        Returns:
+            操作结果
+        """
+        if self.client is None:
+            return {"success": False, "error": "Elasticsearch client not available"}
+
+        try:
+            if not self.client.indices.exists(index=index_name):
+                return {"success": False, "error": f"Index '{index_name}' does not exist"}
+
+            response = self.client.indices.delete(index=index_name)
+            logger.info(f"✅ Index deleted: {index_name}")
+            return {"success": True, "index": index_name, "response": response}
+
+        except Exception as e:
+            logger.error(f"❌ Delete index error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def index_exists(self, index_name: str) -> Dict[str, Any]:
+        """检查索引是否存在.
+
+        Args:
+            index_name: 索引名称
+
+        Returns:
+            操作结果，包含 exists 状态
+        """
+        if self.client is None:
+            return {"success": False, "exists": False, "error": "Elasticsearch client not available"}
+
+        try:
+            exists = self.client.indices.exists(index=index_name)
+            return {"success": True, "exists": exists, "index": index_name}
+
+        except Exception as e:
+            logger.error(f"❌ Check index exists error: {e}")
+            return {"success": False, "exists": False, "error": str(e)}
+
+    def get_index_info(self, index_name: str) -> Dict[str, Any]:
+        """获取索引详细信息.
+
+        Args:
+            index_name: 索引名称
+
+        Returns:
+            索引详细信息
+        """
+        if self.client is None:
+            return {"success": False, "error": "Elasticsearch client not available"}
+
+        try:
+            if not self.client.indices.exists(index=index_name):
+                return {"success": False, "error": f"Index '{index_name}' does not exist"}
+
+            settings = self.client.indices.get_settings(index=index_name)
+            mappings = self.client.indices.get_mapping(index=index_name)
+            stats = self.client.indices.stats(index=index_name)
+
+            return {
+                "success": True,
+                "index": index_name,
+                "settings": settings.get(index_name, {}).get("settings", {}),
+                "mappings": mappings.get(index_name, {}).get("mappings", {}),
+                "stats": stats.get("indices", {}).get(index_name, {})
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Get index info error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def add_document(
+        self,
+        index_name: str,
+        document: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """添加文档到索引.
+
+        Args:
+            index_name: 索引名称
+            document: 文档内容，包含 id, question, content
+
+        Returns:
+            操作结果
+        """
+        if self.client is None:
+            return {"success": False, "error": "Elasticsearch client not available"}
+
+        try:
+            doc_id = document.get("id")
+            if doc_id:
+                response = self.client.index(index=index_name, id=doc_id, body=document)
+            else:
+                response = self.client.index(index=index_name, body=document)
+
+            logger.info(f"✅ Document added to '{index_name}': {response.get('_id', '')}")
+            return {
+                "success": True,
+                "index": index_name,
+                "doc_id": response.get("_id", ""),
+                "result": response.get("result", "")
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Add document error: {e}")
+            return {"success": False, "error": str(e)}
 
 
 # 全局单例

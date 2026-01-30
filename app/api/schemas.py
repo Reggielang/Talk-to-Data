@@ -106,3 +106,38 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: datetime
     version: str = "0.1.0"
+
+
+# ============== Elasticsearch 索引管理 Schemas ==============
+
+class ESIndexCreateRequest(BaseModel):
+    """创建 ES 索引请求"""
+    index_name: str = Field(..., description="索引名称", min_length=1, max_length=100)
+
+
+class ESDocumentCreateRequest(BaseModel):
+    """添加 ES 文档请求"""
+    index_name: str = Field(..., description="索引名称")
+    id: str = Field(..., description="文档ID")
+    question: str = Field(..., description="问题")
+    content: str = Field(..., description="内容")
+
+
+class ESIndexResponse(BaseModel):
+    """ES 索引操作响应"""
+    success: bool = Field(..., description="操作是否成功")
+    index: Optional[str] = Field(None, description="索引名称")
+    doc_id: Optional[str] = Field(None, description="文档ID")
+    result: Optional[str] = Field(None, description="操作结果")
+    error: Optional[str] = Field(None, description="错误信息")
+
+
+class ESIndexInfoResponse(BaseModel):
+    """ES 索引信息响应"""
+    success: bool
+    exists: Optional[bool] = None
+    index: Optional[str] = None
+    settings: Optional[dict] = None
+    mappings: Optional[dict] = None
+    stats: Optional[dict] = None
+    error: Optional[str] = None
