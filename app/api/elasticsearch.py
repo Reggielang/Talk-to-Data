@@ -1,5 +1,6 @@
 """Elasticsearch 索引管理 API 路由."""
 
+import uuid
 from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 from loguru import logger
@@ -137,13 +138,16 @@ async def get_index_info(index_name: str):
 async def add_document(request: ESDocumentCreateRequest):
     """添加文档到索引."""
     try:
+        # 自动生成 UUID（无横线）
+        doc_id = request.id if request.id else uuid.uuid4().hex
+
         document = {
-            "id": request.id,
+            "id": doc_id,
             "question": request.question,
             "content": request.content,
         }
 
-        result = elasticsearch_service.add_document(request.index_name, document)
+        result = elasticsearch_service.add_document(request.index_name, document, request.auto_embedding)
 
         if not result.get("success"):
             raise HTTPException(
@@ -151,7 +155,7 @@ async def add_document(request: ESDocumentCreateRequest):
                 detail=result.get("error", "添加文档失败"),
             )
 
-        logger.info(f"[ESAPI] Document added to '{request.index_name}': {request.id}")
+        logger.info(f"[ESAPI] Document added to '{request.index_name}': {doc_id}")
         return ESIndexResponse(**result)
 
     except HTTPException:

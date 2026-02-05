@@ -118,9 +118,10 @@ class ESIndexCreateRequest(BaseModel):
 class ESDocumentCreateRequest(BaseModel):
     """添加 ES 文档请求"""
     index_name: str = Field(..., description="索引名称")
-    id: str = Field(..., description="文档ID")
+    id: Optional[str] = Field(None, description="文档ID（不填则自动生成UUID）")
     question: str = Field(..., description="问题")
     content: str = Field(..., description="内容")
+    auto_embedding: bool = Field(True, description="是否自动获取向量")
 
 
 class ESIndexResponse(BaseModel):

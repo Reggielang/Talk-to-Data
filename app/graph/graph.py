@@ -74,6 +74,7 @@ def create_initial_state(user_query: str, model_name: str = "glm-4.6") -> State:
         DataQueryTask="",
         DataQueryTable="",
         SqlGenResult={},
+        SqlRellresult=[],
         DataQueryResult={},
         PostProcessTask="",
         PostProcessDatasetId="",

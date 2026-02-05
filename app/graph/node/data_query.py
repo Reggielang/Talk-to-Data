@@ -65,15 +65,32 @@ def data_query_node(state: State) -> State:
         table = state.get("DataQueryTable", "")
         logger.info(f"DataQuery task: {task}, table: {table}")
 
-        # 从 ES 检索 Few-Shot 示例
-        fewshot_examples = elasticsearch_service.search_fewshot_sql(
+        # 从 ES 混合检索 Few-Shot 示例（向量 + 关键词）
+        fewshot_results = elasticsearch_service.search_hybrid(
             query_text=task,
+            index_name="my-index",
             top_k=3,
-            min_score=0.3,
+            vector_weight=0.7,
+            keyword_weight=0.3,
         )
-        fewshot_prompt = elasticsearch_service.format_fewshot_examples(fewshot_examples)
-        if fewshot_prompt:
+
+        # 转换为旧格式
+        fewshot_examples = []
+        for result in fewshot_results:
+            sql_content = result.get("content", "")
+            # 将字面量 \n 转换为真正的换行符
+            sql_content = sql_content.replace("\\n", "\n")
+
+            fewshot_examples.append({
+                "question": result.get("question", ""),
+                "sql": sql_content,
+                "score": result.get("score", 0),
+            })
+
             logger.info(f"Retrieved {len(fewshot_examples)} few-shot examples from ES")
+
+        # 存储召回的 Few-Shot 示例到 State
+        state["SqlRellresult"] = fewshot_examples
 
         prompt_config = PromptConfig()
         date_func = create_date_function(state.get("CurrentDatetime", datetime.now()))
@@ -83,7 +100,7 @@ def data_query_node(state: State) -> State:
             date=date_func,
             table=table,
             task=task,
-            fewshot_examples=fewshot_prompt,
+            fewshot_examples=fewshot_examples,
         )
         logger.info(f"DataQuery System Prompt:\n {system_prompt}")
 

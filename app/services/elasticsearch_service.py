@@ -3,6 +3,7 @@
 from typing import List, Optional, Dict, Any
 from loguru import logger
 from app.conf.config import settings
+from openai import OpenAI
 
 try:
     from elasticsearch import Elasticsearch
@@ -47,6 +48,138 @@ class ElasticsearchService:
         except Exception as e:
             logger.error(f"❌ Elasticsearch connection error: {e}")
             self.client = None
+
+    # ==================== 搜索方法 ====================
+
+    def search_hybrid(
+        self,
+        query_text: str,
+        index_name: str,
+        top_k: int = 5,
+        vector_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+    ) -> List[dict]:
+        """混合搜索：向量搜索 + 关键词搜索.
+
+        Args:
+            query_text: 用户查询文本
+            index_name: 索引名称
+            top_k: 返回前 K 个结果
+            vector_weight: 向量搜索权重 (0-1)
+            keyword_weight: 关键词搜索权重 (0-1)
+
+        Returns:
+            搜索结果列表
+        """
+        if self.client is None:
+            logger.warning("Elasticsearch client not available")
+            return []
+
+        try:
+            # 获取查询向量
+            query_vector = self.get_embedding(query_text)
+            if not query_vector:
+                logger.warning("Failed to get query vector, falling back to keyword search only")
+                return self._search_keyword_only(query_text, index_name, top_k)
+
+            # 混合搜索
+            search_body = {
+                "query": {
+                    "bool": {
+                        "should": [
+                            # 向量搜索
+                            {
+                                "knn": {
+                                    "field": "question_vector",
+                                    "query_vector": query_vector,
+                                    "k": top_k,
+                                    "num_candidates": min(top_k * 10, 100),
+                                    "boost": vector_weight,
+                                }
+                            },
+                            # 关键词搜索
+                            {
+                                "match": {
+                                    "question": {
+                                        "query": query_text,
+                                        "boost": keyword_weight,
+                                    }
+                                }
+                            },
+                        ],
+                    }
+                },
+                "size": top_k,
+            }
+
+            response = self.client.search(index=index_name, body=search_body)
+
+            results = []
+            for hit in response.get("hits", {}).get("hits", []):
+                source = hit.get("_source", {})
+                score = hit.get("_score", 0)
+                results.append({
+                    "id": source.get("id"),
+                    "question": source.get("question"),
+                    "content": source.get("content"),
+                    "score": score,
+                })
+
+            logger.info(f"✅ Hybrid search: {len(results)} results")
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ Hybrid search error: {e}")
+            return []
+
+    def _search_keyword_only(
+        self,
+        query_text: str,
+        index_name: str,
+        top_k: int = 5,
+    ) -> List[dict]:
+        """纯关键词搜索（降级方案）.
+
+        Args:
+            query_text: 查询文本
+            index_name: 索引名称
+            top_k: 返回结果数
+
+        Returns:
+            搜索结果列表
+        """
+        if self.client is None:
+            logger.warning("Elasticsearch client not available")
+            return []
+
+        try:
+            search_body = {
+                "query": {
+                    "match": {
+                        "question": query_text,
+                    }
+                },
+                "size": top_k,
+            }
+
+            response = self.client.search(index=index_name, body=search_body)
+
+            results = []
+            for hit in response.get("hits", {}).get("hits", []):
+                source = hit.get("_source", {})
+                score = hit.get("_score", 0)
+                results.append({
+                    "id": source.get("id"),
+                    "question": source.get("question"),
+                    "content": source.get("content"),
+                    "score": score,
+                })
+
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ Keyword search error: {e}")
+            return []
 
     def search_fewshot_sql(
         self,
@@ -136,71 +269,39 @@ class ElasticsearchService:
             logger.error(f"Elasticsearch search error: {e}")
             return []
 
-    def format_fewshot_examples(self, examples: List[dict]) -> str:
-        """将 Few-Shot 示例格式化为 Prompt 字符串.
+    # ==================== Embedding 方法 ====================
+
+    def get_embedding(self, text: str) -> Optional[List[float]]:
+        """获取文本的向量表示.
 
         Args:
-            examples: Few-Shot 示例列表
+            text: 输入文本
 
         Returns:
-            格式化的 Few-Shot Prompt 字符串
+            向量列表，失败返回 None
         """
-        if not examples:
-            return ""
+        if OpenAI is None:
+            logger.error("OpenAI package not installed")
+            return None
 
-        formatted_lines = []
-        formatted_lines.append("\n### 参考示例 (Few-Shot Examples)\n")
+        try:
+            client = OpenAI(
+                api_key=settings.qwen_api_key,
+                base_url=settings.qwen_base_url,
+            )
 
-        for i, example in enumerate(examples, 1):
-            question = example.get("question", "")
-            sql = example.get("sql", "")
-            score = example.get("score", 0)
+            response = client.embeddings.create(
+                model="text-embedding-v4",
+                input=text,
+                dimensions=1024,
+                encoding_format="float"
+            )
 
-            # 清理 SQL 中的多余注释和格式
-            sql = self._clean_sql(sql)
+            return response.data[0].embedding
 
-            formatted_lines.append(f"#### 示例 {i} (相似度: {score:.2f})")
-            formatted_lines.append(f"**问题:** {question}")
-            formatted_lines.append(f"**SQL:**")
-            formatted_lines.append("```sql")
-            formatted_lines.append(sql)
-            formatted_lines.append("```")
-            formatted_lines.append("")
-
-        return "\n".join(formatted_lines)
-
-    def _clean_sql(self, sql: str) -> str:
-        """清理 SQL 语句，移除过长的注释。
-
-        Args:
-            sql: 原始 SQL
-
-        Returns:
-            清理后的 SQL
-        """
-        if not sql:
-            return sql
-
-        # 移除 /*...*/ 风格的多行注释（保留简短注释）
-        import re
-
-        # 如果注释超过 100 字符，移除
-        def replace_long_comment(match):
-            comment = match.group(0)
-            if len(comment) > 150:
-                return ""
-            return comment
-
-        # 替换块注释
-        sql = re.sub(r'/\*.*?\*/', replace_long_comment, sql, flags=re.DOTALL)
-
-        # 移除行末注释（但保留简短注释）
-        sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
-
-        # 清理多余空行
-        sql = re.sub(r'\n\s*\n', '\n', sql)
-
-        return sql.strip()
+        except Exception as e:
+            logger.error(f"❌ Get embedding error: {e}")
+            return None
 
     # ==================== 索引管理方法 ====================
 
@@ -229,6 +330,12 @@ class ElasticsearchService:
                         "id": {"type": "keyword"},
                         "question": {"type": "text"},
                         "content": {"type": "text"},
+                        "question_vector": {
+                            "type": "dense_vector",
+                            "dims": 1024,
+                            "index": True,
+                            "similarity": "cosine"
+                        },
                     }
                 },
                 "settings": {
@@ -325,12 +432,14 @@ class ElasticsearchService:
         self,
         index_name: str,
         document: Dict[str, Any],
+        auto_embedding: bool = True,
     ) -> Dict[str, Any]:
         """添加文档到索引.
 
         Args:
             index_name: 索引名称
             document: 文档内容，包含 id, question, content
+            auto_embedding: 是否自动获取 content 的向量
 
         Returns:
             操作结果
@@ -339,6 +448,17 @@ class ElasticsearchService:
             return {"success": False, "error": "Elasticsearch client not available"}
 
         try:
+            # 自动获取向量（基于 question 字段）
+            if auto_embedding and "question" in document:
+                question = document.get("question", "")
+                if question:
+                    vector = self.get_embedding(question)
+                    if vector:
+                        document["question_vector"] = vector
+                        logger.info(f"✅ Got embedding for question (dim={len(vector)})")
+                    else:
+                        logger.warning(f"⚠️ Failed to get embedding, storing without vector")
+
             doc_id = document.get("id")
             if doc_id:
                 response = self.client.index(index=index_name, id=doc_id, body=document)
