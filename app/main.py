@@ -13,6 +13,7 @@ import time
 from sqlalchemy import text
 
 from app.api.chat import router as chat_router
+from app.api.elasticsearch import router as elasticsearch_router
 from app.conf.config import settings
 from app.db.mysql import mysql_client
 from app.db.base import async_session_factory
@@ -45,6 +46,28 @@ async def check_postgres_connection() -> bool:
         return False
 
 
+def check_elasticsearch_connection() -> bool:
+    """检查 Elasticsearch 连接."""
+    from app.services.elasticsearch_service import elasticsearch_service
+
+    try:
+        if elasticsearch_service.client is None:
+            logger.warning(f"⚠️ Elasticsearch 客户端未初始化（elasticsearch 包可能未安装）")
+            logger.warning(f"   配置: {settings.es_scheme}://{settings.es_host}:{settings.es_port}")
+            return True  # ES 可选，不阻止启动
+
+        if elasticsearch_service.client.ping():
+            logger.info(f"✅ Elasticsearch 连接成功: {settings.es_host}:{settings.es_port}")
+            return True
+        else:
+            logger.warning(f"⚠️ Elasticsearch ping 失败: {settings.es_host}:{settings.es_port}")
+            return True  # ES 可选，不阻止启动
+    except Exception as e:
+        logger.warning(f"⚠️ Elasticsearch 连接异常: {e}")
+        logger.warning(f"   配置: {settings.es_scheme}://{settings.es_host}:{settings.es_port}")
+        return True  # ES 可选，不阻止启动
+
+
 async def startup_health_check():
     """启动时健康检查 - 所有服务必须可用."""
     logger.info("=" * 60)
@@ -55,6 +78,9 @@ async def startup_health_check():
         "MySQL": check_mysql_connection(),
         "PostgreSQL": check_postgres_connection(),
     }
+
+    # ES 是可选服务，单独检查但不阻止启动
+    check_elasticsearch_connection()
 
     results = {}
     for name, coro in checks.items():
@@ -175,6 +201,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # 注册路由
 app.include_router(chat_router)
+app.include_router(elasticsearch_router)
 
 
 @app.get("/", tags=["root"])
@@ -191,6 +218,11 @@ async def root():
             "GET /chat/sessions/{session_id}": "获取会话信息",
             "GET /chat/sessions/{session_id}/messages": "获取会话消息",
             "GET /chat/sessions/{session_id}/events": "获取会话事件",
+            "POST /es/index/create": "创建 ES 索引",
+            "DELETE /es/index/{index_name}": "删除 ES 索引",
+            "GET /es/index/{index_name}/exists": "检查索引是否存在",
+            "GET /es/index/{index_name}/info": "获取索引详细信息",
+            "POST /es/document/add": "添加文档到索引",
             "GET /health": "健康检查",
         }
     }

@@ -23,6 +23,7 @@ class State(TypedDict):
     DataQueryTable: str
     SqlGenResult: dict
     DataQueryResult: dict
+    SqlRellresult: list  # 召回的 Few-Shot SQL 示例
     # PostProcess 节点相关字段
     PostProcessTask: str
     PostProcessDatasetId: str

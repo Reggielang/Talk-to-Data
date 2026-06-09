@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     es_port: int = 9200
     es_user: str = ""
     es_password: str = ""
-    es_index: str = "fewshot_sql"
+    es_index: str = "my-index"
     es_scheme: str = "http"
 
     # Redis Configuration

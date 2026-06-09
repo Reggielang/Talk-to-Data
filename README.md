@@ -89,14 +89,21 @@ docker run -d --name postgres-16 \
   --restart unless-stopped postgres:16
 ```
 
-#### 4. 初始化数据库
+# ES
+docker run -d --name es8 --hostname es8-node -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" -e "xpack.security.enabled=false" -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" -v es8-data:/usr/share/elasticsearch/data docker.elastic.co/elasticsearch/elasticsearch:8.19.9
 
-```bash
-# 初始化 PostgreSQL 元数据库表结构
-python -c "from app.db.base import init_db; import asyncio; asyncio.run(init_db())"
-```
 
-#### 5. 启动后端服务
+
+# kibana
+docker run -d \
+  --name kibana \
+  --link es8:elasticsearch \
+  -p 5601:5601 \
+  -e "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" \
+  docker.elastic.co/kibana/kibana:8.19.9
+
+
+#### 4. 启动后端服务
 
 ```bash
 # 方式一：直接运行
