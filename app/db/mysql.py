@@ -1,16 +1,26 @@
 import pymysql
+from pymysql.converters import conversions
+from decimal import Decimal
 from typing import List, Dict, Any, Optional
 from contextlib import contextmanager
 from loguru import logger
-from config import get_settings
-
-settings = get_settings()
+from app.conf.config import settings
+import threading
 
 
 class MySQLClient:
-    """MySQL 客户端."""
+    """MySQL 客户端（连接池版本）."""
+    
+    _local = threading.local()  # 线程本地存储
+    _pool = []  # 连接池
+    _max_pool_size = 10
+    _lock = threading.Lock()
 
     def __init__(self):
+        # 配置 Decimal 转换为 float
+        conv = conversions.copy()
+        conv[Decimal] = float
+
         self.config = {
             "host": settings.mysql_host,
             "port": settings.mysql_port,
@@ -19,74 +29,69 @@ class MySQLClient:
             "database": settings.mysql_database,
             "charset": "utf8mb4",
             "cursorclass": pymysql.cursors.DictCursor,
+            "conv": conv,
+            "autocommit": False,  # 手动控制事务
         }
+
+    def _get_connection_from_pool(self):
+        """从连接池获取连接."""
+        with self._lock:
+            if self._pool:
+                return self._pool.pop()
+        
+        # 创建新连接
+        return pymysql.connect(**self.config)
+
+    def _return_connection_to_pool(self, conn):
+        """将连接放回连接池."""
+        with self._lock:
+            if len(self._pool) < self._max_pool_size:
+                self._pool.append(conn)
+            else:
+                conn.close()
 
     @contextmanager
     def get_connection(self):
-        """获取数据库连接上下文."""
-        conn = pymysql.connect(**self.config)
+        """获取数据库连接（连接池版本）."""
+        conn = self._get_connection_from_pool()
         try:
             yield conn
+        except Exception:
+            conn.rollback()
+            raise
+        else:
+            conn.commit()  # 自动提交
         finally:
-            conn.close()
+            self._return_connection_to_pool(conn)
 
     def execute_query(self, sql: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
-        """执行查询."""
+        """执行查询（优化版本）."""
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(sql, params or ())
-                    result = cursor.fetchmany(settings.max_query_results)
-                conn.commit()
-                return result
+                    # 使用 executemany 批量查询（如果有多个参数）
+                    if params is not None:
+                        cursor.execute(sql, params)
+                    else:
+                        cursor.execute(sql)
+                    
+                    # 分批获取结果，减少内存占用
+                    batch_size = 1000
+                    result = []
+                    while True:
+                        rows = cursor.fetchmany(batch_size)
+                        if not rows:
+                            break
+                        result.extend(rows)
+                        
+                        # 如果结果超过最大限制，提前结束
+                        if len(result) >= settings.max_query_results:
+                            break
+                    
+                    return result[:settings.max_query_results]  # 确保不超过限制
         except Exception as e:
             logger.error(f"MySQL query error: {e}")
             raise
-
-    def execute_sql(self, sql: str, params: Optional[tuple] = None) -> bool:
-        """执行非查询 SQL."""
-        try:
-            with self.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(sql, params or ())
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"MySQL execute error: {e}")
-            raise
-
-    def get_schema(self) -> Dict[str, List[Dict[str, Any]]]:
-        """获取数据库 schema."""
-        sql = """
-            SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = %s
-            ORDER BY TABLE_NAME, ORDINAL_POSITION
-        """
-        results = self.execute_query(sql, (settings.mysql_database,))
-
-        schema = {}
-        for row in results:
-            table = row["TABLE_NAME"]
-            if table not in schema:
-                schema[table] = []
-            schema[table].append({
-                "column": row["COLUMN_NAME"],
-                "type": row["DATA_TYPE"],
-                "comment": row["COLUMN_COMMENT"],
-            })
-        return schema
-
-    def get_tables(self) -> List[str]:
-        """获取所有表名."""
-        sql = """
-            SELECT TABLE_NAME
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = %s
-            AND TABLE_TYPE = 'BASE TABLE'
-        """
-        results = self.execute_query(sql, (settings.mysql_database,))
-        return [r["TABLE_NAME"] for r in results]
 
 
 # 全局实例

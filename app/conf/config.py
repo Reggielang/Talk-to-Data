@@ -8,21 +8,33 @@ class Settings(BaseSettings):
     # LLM Configuration
     openai_api_key: str = ""
     zhipuai_api_key: str = ""
-    default_llm: str = "openai"
+    qwen_api_key: str = ""
+    base_url: str = ""
+    qwen_base_url: str = ""
+    default_llm: str = ""
+    qwen_model_name: str = ""
 
     # MySQL Configuration
     mysql_host: str = "localhost"
-    mysql_port: int = 3306
-    mysql_user: str = "root"
+    mysql_port: int = 3307
+    mysql_user: str = ""
     mysql_password: str = ""
     mysql_database: str = ""
 
     # PostgreSQL Configuration
     pg_host: str = "localhost"
     pg_port: int = 5432
-    pg_user: str = "postgres"
+    pg_user: str = "kodi"
     pg_password: str = ""
-    pg_database: str = "talktodata_meta"
+    pg_database: str = "ttd"
+
+    # Elasticsearch Configuration
+    es_host: str = "localhost"
+    es_port: int = 9200
+    es_user: str = ""
+    es_password: str = ""
+    es_index: str = "my-index"
+    es_scheme: str = "http"
 
     # Redis Configuration
     redis_host: str = "localhost"
@@ -49,3 +61,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+settings = get_settings()
